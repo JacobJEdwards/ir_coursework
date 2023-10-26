@@ -1,13 +1,13 @@
-from typing import List, Tuple
+from typing import List, Tuple, Set
 from nltk.stem import WordNetLemmatizer
 from nltk import word_tokenize
 from nltk.corpus import stopwords
 import string
 from parser.parser import depickle_obj
-from config import VIDEOGAMES_DIR
+from config import CACHE_SIZE
 from search.tf_idf import calculate_idf, calculate_tf_idf, calculate_tf
 import json
-from pprint import pprint
+from functools import lru_cache
 
 
 SearchResults = List[Tuple[str, float]]
@@ -33,13 +33,14 @@ def get_input() -> List[str]:
 
 
 # need to add tf_idf -> think how many need to change implemenation (add metadata etc)
-def search_idf(query_terms: List[str]) -> SearchResults:
+@lru_cache(CACHE_SIZE)
+def search_idf(query_terms: Tuple) -> SearchResults:
     inverted_index = depickle_obj()
     with open("metadata.json", "r") as f:
         metadata = json.load(f)
 
     results = {}
-    total_docs = len(list(VIDEOGAMES_DIR.iterdir()))
+    total_docs = metadata["total_docs"]
 
     # clean this up its not nice
     for term in query_terms:
@@ -50,13 +51,13 @@ def search_idf(query_terms: List[str]) -> SearchResults:
             idf = calculate_idf(total_docs, docs_with_term)
 
             for occurrence in token.occurrences:
-                tf = calculate_tf(metadata[occurrence[0]]["word_count"], occurrence[1])
+                tf = calculate_tf(metadata[occurrence.filename]["word_count"], occurrence.num_occ)
                 tf_idf = calculate_tf_idf(tf, idf)
 
-                if occurrence[0] in results:
-                    results[occurrence[0]] += tf_idf
+                if occurrence.filename in results:
+                    results[occurrence.filename] += tf_idf
                 else:
-                    results[occurrence[0]] = tf_idf
+                    results[occurrence.filename] = tf_idf
 
     return sorted(results.items(), key=lambda x: x[1], reverse=True)[:10]
 
@@ -64,6 +65,6 @@ def search_idf(query_terms: List[str]) -> SearchResults:
 def search() -> None:
     while True:
         user_input = get_input()
-        results = search_idf(user_input)
+        results = search_idf(tuple(user_input))
         for doc, score in results:
             print(f"Document: {doc}, Score: {score}")

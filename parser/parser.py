@@ -10,6 +10,7 @@ from typing import List, Dict, Set, BinaryIO, Tuple
 from dataclasses import dataclass
 from collections import namedtuple
 from config import PICKLE_FILE
+from collections import defaultdict
 
 
 lemmatizer: WordNetLemmatizer = WordNetLemmatizer()
@@ -20,7 +21,7 @@ punctuation: str = string.punctuation + "♥•’‘€–"
 translator = str.maketrans("", "", punctuation)
 
 # named tuple to group together occurrences of a word in a document
-DocOccurrences = namedtuple("DocOccurrences", "filename count")
+DocOccurrences = namedtuple("DocOccurrences", "filename num_occ")
 
 
 # doc token represents an instance of a word in a particular document
@@ -42,6 +43,7 @@ class Token:
 InvertedIndex = Dict[str, Token]
 
 
+# eventually replace with nltk.probabilty.FreqDist
 def parse_contents(file: BinaryIO, parser="lxml") -> Tuple[Dict[str, int], int]:
     soup = BeautifulSoup(file.read(), features=parser)
     # remove unneeded info
@@ -73,21 +75,24 @@ def get_count(words: List[str]) -> Tuple[Dict[str, int], int]:
     )
 
 
-# change doc dict to its own type -> inverted index
-# Define a function to merge the word count dictionaries
 def merge_word_count_dicts(doc_dict: Dict[str, Dict[str, int]]) -> InvertedIndex:
     merged_dict: InvertedIndex = {}
+
+    # Use defaultdict to store occurrences
+    occurrences_dict = defaultdict(list)
 
     for name, occurrences in doc_dict.items():
         for word, count in occurrences.items():
             if word in merged_dict:
                 merged_dict[word].count += count
-                merged_dict[word].occurrences.append(DocOccurrences(name, count))
+                occurrences_dict[word].append(DocOccurrences(name, count))
             else:
-                merged_dict[word] = Token(word, count, [DocOccurrences(name, count)])
+                merged_dict[word] = Token(word, count, [])
+                occurrences_dict[word].append(DocOccurrences(name, count))
 
-    # for word, token in merged_dict.items():
-    # token.occurrences = sorted(token.occurrences, key=lambda occ: occ[1])
+    # Update occurrences in merged_dict
+    for word, occurrences in occurrences_dict.items():
+        merged_dict[word].occurrences = sorted(occurrences, key=lambda occ: occ.num_occ, reverse=True)
 
     return merged_dict
 
