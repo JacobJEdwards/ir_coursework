@@ -67,12 +67,7 @@ def parse_contents(file: BinaryIO, parser="lxml") -> Tuple[Dict[str, int], int]:
 
 def get_count(words: List[str]) -> Tuple[Dict[str, int], int]:
     total_words = len(words)
-    return (
-        {
-            name: words.count(name) for name in set(words)
-        },
-        total_words
-    )
+    return ({name: words.count(name) for name in set(words)}, total_words)
 
 
 def merge_word_count_dicts(doc_dict: Dict[str, Dict[str, int]]) -> InvertedIndex:
@@ -92,7 +87,9 @@ def merge_word_count_dicts(doc_dict: Dict[str, Dict[str, int]]) -> InvertedIndex
 
     # Update occurrences in merged_dict
     for word, occurrences in occurrences_dict.items():
-        merged_dict[word].occurrences = sorted(occurrences, key=lambda occ: occ.num_occ, reverse=True)
+        merged_dict[word].occurrences = sorted(
+            occurrences, key=lambda occ: occ.num_occ, reverse=True
+        )
 
     return merged_dict
 
