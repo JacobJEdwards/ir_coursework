@@ -5,9 +5,10 @@ from nltk.corpus import stopwords
 import string
 from parser.reader import generate_object
 from parser.parser import InvertedIndex
-from search.tf_idf import calculate_idf, calculate_tf_idf, calculate_tf
+from search.tf_idf import calculate_tf_idf
 import json
 from collections import defaultdict
+from pprint import pprint
 
 
 SearchResults = List[Tuple[str, float]]
@@ -60,7 +61,11 @@ def search() -> None:
 
     while True:
         user_input = get_input()
-        results = search_idf(tuple(user_input), ii, metadata)
+        #results = search_idf(tuple(user_input), ii, metadata)
 
-        for doc, score in results:
-            print(f"Document: {doc}, Score: {score}")
+        results = [ii.search(word) for word in user_input]
+
+        pprint(results)
+
+        #for doc, score in results:
+            #print(f"Document: {doc}, Score: {score}")

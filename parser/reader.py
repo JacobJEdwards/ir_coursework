@@ -70,9 +70,9 @@ def generate_object() -> InvertedIndex:
         logger.error("Error setting metadata")
         logger.error(e)
 
-    t = merge_word_count_dicts(success, total_docs)
-    pickle_obj(t)
-    return t
+    inverted_index, tree = merge_word_count_dicts(success, total_docs)
+    pickle_obj(inverted_index)
+    return tree
 
 
 def parse_and_read(file_path: Path) -> Union[List[DocOccurrences], Exception]:

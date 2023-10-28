@@ -36,7 +36,59 @@ class TrieNode:
 
 class II:
     def __init__(self):
+        self.documents = None
         self.root: TrieNode = TrieNode()
+
+    def insert(self, occurrence):
+        node = self.root
+        for char in occurrence.word:
+            node = node.children[char]
+        node.occurrences.append(occurrence)
+
+    def calculate_idf(self, total_docs: int):
+        def dfs(node: TrieNode, doc_count: int):
+            for occ in node.occurrences:
+                token = Token(occ.filename, 0, 0, [])
+                token.count += occ.num_occ
+                token.idf = calculate_idf(total_docs, doc_count)
+                self.documents[occ.word] = token
+            for child in node.children.values():
+                dfs(child, doc_count + len(node.occurrences))
+
+        dfs(self.root, 0)
+
+    def search(self, query):
+        results = defaultdict(int)
+
+        def dfs(node, current_word, pattern_index):
+            if pattern_index == len(query):
+                if node.occurrences:
+                    for doc in node.occurrences:
+                        results[doc.filename] += doc.tf * self.documents[doc.filename].i
+                    results.update(node.occurrences)
+                for char, child_node in node.children.items():
+                    dfs(child_node, current_word + char, pattern_index)
+            elif query[pattern_index] == '*':
+                for char, child_node in node.children.values():
+                    dfs(child_node, current_word + char, pattern_index)
+            elif query[pattern_index] in node.children:
+                next_node = node.children[query[pattern_index]]
+                dfs(next_node, current_word + query[pattern_index], pattern_index + 1)
+
+        dfs(self.root, '', 0)
+
+        return results
+
+    def __str__(self):
+        return self._traverse(self.root, "")
+
+    def _traverse(self, node, current_word):
+        result = ""
+        if node.occurrences:
+            result += f"Word: {current_word}, Document Occurrences: {node.occurrences}\n"
+        for char, child_node in node.children.items():
+            result += self._traverse(child_node, current_word + char)
+        return result
 
 
 # doc token represents an instance of a word in a particular document
@@ -93,11 +145,13 @@ def get_count(words: List[str]) -> Dict[str, int]:
 
 def merge_word_count_dicts(doc_dict: Dict[str, List[DocOccurrences]], total_docs: int) -> InvertedIndex:
     merged_dict: InvertedIndex = {}
+    index = II()
 
     # Use defaultdict to store occurrences
 
     for name, occurrences in doc_dict.items():
         for occ in occurrences:
+            index.insert(occ)
             if occ.word in merged_dict:
                 merged_dict[occ.word].count += occ.num_occ
                 merged_dict[occ.word].occurrences.append(occ)
@@ -110,7 +164,7 @@ def merge_word_count_dicts(doc_dict: Dict[str, List[DocOccurrences]], total_docs
 
     logger.debug("Generated inverted index")
 
-    return merged_dict
+    return merged_dict, index
 
 
 def pickle_obj(data: InvertedIndex) -> None:
