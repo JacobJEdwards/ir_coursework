@@ -12,7 +12,7 @@ from collections import namedtuple
 from config import PICKLE_FILE
 from collections import defaultdict
 import logging
-from search.tf_idf import calculate_tf
+from search.tf_idf import calculate_tf, calculate_idf
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +41,7 @@ class DocToken:
 class Token:
     word: str
     count: int
+    idf: float
     occurrences: List[DocOccurrences]
 
 
@@ -79,11 +80,10 @@ def get_count(words: List[str]) -> Dict[str, int]:
     return {name: words.count(name) for name in set(words)}
 
 
-def merge_word_count_dicts(doc_dict: Dict[str, List[DocOccurrences]]) -> InvertedIndex:
+def merge_word_count_dicts(doc_dict: Dict[str, List[DocOccurrences]], total_docs: int) -> InvertedIndex:
     merged_dict: InvertedIndex = {}
 
     # Use defaultdict to store occurrences
-    occurrences_dict = defaultdict(list)
 
     for name, occurrences in doc_dict.items():
         for occ in occurrences:
@@ -91,7 +91,12 @@ def merge_word_count_dicts(doc_dict: Dict[str, List[DocOccurrences]]) -> Inverte
                 merged_dict[occ.word].count += occ.num_occ
                 merged_dict[occ.word].occurrences.append(occ)
             else:
-                merged_dict[occ.word] = Token(occ.word, occ.num_occ, [occ])
+                merged_dict[occ.word] = Token(occ.word, occ.num_occ, 0, [occ])
+
+    for word, token in merged_dict.items():
+        doc_count = len(token.occurrences)
+        token.idf = calculate_idf(total_docs, doc_count)
+
 
     logger.debug("Generated inverted index")
 

@@ -39,18 +39,14 @@ def search_idf(
     query_terms: Tuple, inverted_index: InvertedIndex, metadata: Dict
 ) -> SearchResults:
     results = defaultdict(float)
-    total_docs = metadata["total_docs"]
 
     # clean this up its not nice
     for term in query_terms:
         if term in inverted_index:
             token = inverted_index[term]
 
-            docs_with_term = len(token.occurrences)
-            idf = calculate_idf(total_docs, docs_with_term)
-
             for occurrence in token.occurrences:
-                tf_idf = calculate_tf_idf(occurrence.tf, idf)
+                tf_idf = calculate_tf_idf(occurrence.tf, token.idf)
                 results[occurrence.filename] += tf_idf
 
     return sorted(results.items(), key=lambda x: x[1], reverse=True)[:10]

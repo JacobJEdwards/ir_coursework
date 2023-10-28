@@ -44,9 +44,10 @@ def generate_object() -> InvertedIndex:
         return depickle_obj()
 
     results = read_dir(VIDEOGAMES_DIR)
+    total_docs = len(results)
     success = {}
     metadata = {
-        "total_docs": len(results),
+        "total_docs": total_docs,
     }
 
     # filepath is of type Path, result of type DocOccurrences
@@ -69,7 +70,7 @@ def generate_object() -> InvertedIndex:
         logger.error("Error setting metadata")
         logger.error(e)
 
-    t = merge_word_count_dicts(success)
+    t = merge_word_count_dicts(success, total_docs)
     pickle_obj(t)
     return t
 
@@ -85,7 +86,7 @@ def parse_and_read(file_path: Path) -> Union[List[DocOccurrences], Exception]:
         return e
 
 
-def read_dir(directory: Path) -> Dict[Path, Union[Dict[str, int], str]]:
+def read_dir(directory: Path) -> Dict[Path, Union[List[DocOccurrences], Exception]]:
     logger.debug("Beginning file parsing")
     try:
         with multiprocessing.Pool() as pool:
