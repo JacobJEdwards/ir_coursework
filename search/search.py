@@ -50,10 +50,7 @@ def search_idf(
             idf = calculate_idf(total_docs, docs_with_term)
 
             for occurrence in token.occurrences:
-                tf = calculate_tf(
-                    metadata[occurrence.filename]["word_count"], occurrence.num_occ
-                )
-                tf_idf = calculate_tf_idf(tf, idf)
+                tf_idf = calculate_tf_idf(occurrence.tf, idf)
                 results[occurrence.filename] += tf_idf
 
     return sorted(results.items(), key=lambda x: x[1], reverse=True)[:10]

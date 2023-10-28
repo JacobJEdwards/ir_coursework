@@ -11,6 +11,10 @@ from dataclasses import dataclass
 from collections import namedtuple
 from config import PICKLE_FILE
 from collections import defaultdict
+import logging
+from search.tf_idf import calculate_tf
+
+logger = logging.getLogger(__name__)
 
 
 lemmatizer: WordNetLemmatizer = WordNetLemmatizer()
@@ -21,7 +25,7 @@ punctuation: str = string.punctuation + "♥•’‘€–"
 translator = str.maketrans("", "", punctuation)
 
 # named tuple to group together occurrences of a word in a document
-DocOccurrences = namedtuple("DocOccurrences", "filename num_occ")
+DocOccurrences = namedtuple("DocOccurrences", "filename word num_occ tf")
 
 
 # doc token represents an instance of a word in a particular document
@@ -44,7 +48,7 @@ InvertedIndex = Dict[str, Token]
 
 
 # eventually replace with nltk.probabilty.FreqDist
-def parse_contents(file: BinaryIO, parser="lxml") -> Tuple[Dict[str, int], int]:
+def parse_contents(file: BinaryIO, parser="lxml") -> List[DocOccurrences]:
     soup = BeautifulSoup(file.read(), features=parser)
     # remove unneeded info
     comments = soup.find_all(string=lambda element: isinstance(element, Comment))
@@ -62,34 +66,34 @@ def parse_contents(file: BinaryIO, parser="lxml") -> Tuple[Dict[str, int], int]:
         if word not in stop_words
     ]
 
-    return get_count(filtered_text)
+    total_words = len(filtered_text)
+    counts = get_count(filtered_text)
+
+    return [
+        DocOccurrences(filename=file.name, word=name, num_occ=count, tf=calculate_tf(total_words, count))
+        for name, count in counts.items()
+    ]
 
 
-def get_count(words: List[str]) -> Tuple[Dict[str, int], int]:
-    total_words = len(words)
-    return ({name: words.count(name) for name in set(words)}, total_words)
+def get_count(words: List[str]) -> Dict[str, int]:
+    return {name: words.count(name) for name in set(words)}
 
 
-def merge_word_count_dicts(doc_dict: Dict[str, Dict[str, int]]) -> InvertedIndex:
+def merge_word_count_dicts(doc_dict: Dict[str, List[DocOccurrences]]) -> InvertedIndex:
     merged_dict: InvertedIndex = {}
 
     # Use defaultdict to store occurrences
     occurrences_dict = defaultdict(list)
 
     for name, occurrences in doc_dict.items():
-        for word, count in occurrences.items():
-            if word in merged_dict:
-                merged_dict[word].count += count
-                occurrences_dict[word].append(DocOccurrences(name, count))
+        for occ in occurrences:
+            if occ.word in merged_dict:
+                merged_dict[occ.word].count += occ.num_occ
+                merged_dict[occ.word].occurrences.append(occ)
             else:
-                merged_dict[word] = Token(word, count, [])
-                occurrences_dict[word].append(DocOccurrences(name, count))
+                merged_dict[occ.word] = Token(occ.word, occ.num_occ, [occ])
 
-    # Update occurrences in merged_dict
-    for word, occurrences in occurrences_dict.items():
-        merged_dict[word].occurrences = sorted(
-            occurrences, key=lambda occ: occ.num_occ, reverse=True
-        )
+    logger.debug("Generated inverted index")
 
     return merged_dict
 
@@ -99,7 +103,7 @@ def pickle_obj(data: InvertedIndex) -> None:
         with open(PICKLE_FILE, "wb") as f:
             pickle.dump(data, f)
     except Exception as e:
-        print(e)
+        logger.critical(e)
         exit(1)
 
 
@@ -109,5 +113,5 @@ def depickle_obj() -> InvertedIndex:
             data = pickle.load(f)
             return data
     except Exception as e:
-        print(e)
+        logger.critical(e)
         exit(1)
