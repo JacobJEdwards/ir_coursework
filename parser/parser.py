@@ -28,6 +28,17 @@ translator = str.maketrans("", "", punctuation)
 DocOccurrences = namedtuple("DocOccurrences", "filename word num_occ tf")
 
 
+class TrieNode:
+    def __init__(self):
+        self.children: Dict[str, TrieNode] = defaultdict(TrieNode)
+        self.occurrences: List[DocOccurrences] = []
+
+
+class II:
+    def __init__(self):
+        self.root: TrieNode = TrieNode()
+
+
 # doc token represents an instance of a word in a particular document
 @dataclass
 class DocToken:
@@ -96,7 +107,6 @@ def merge_word_count_dicts(doc_dict: Dict[str, List[DocOccurrences]], total_docs
     for word, token in merged_dict.items():
         doc_count = len(token.occurrences)
         token.idf = calculate_idf(total_docs, doc_count)
-
 
     logger.debug("Generated inverted index")
 
