@@ -3,26 +3,17 @@ import pickle
 from bs4 import BeautifulSoup
 from bs4.element import Comment
 from nltk.tokenize import word_tokenize
-from nltk.stem import PorterStemmer, WordNetLemmatizer, StemmerI
-from nltk.corpus import stopwords
-import string
-from typing import List, Dict, Set, BinaryIO, Tuple
+from nltk.probability import FreqDist
+from typing import List, Dict, BinaryIO, NoReturn, Union
 from dataclasses import dataclass
 from collections import namedtuple
 from config import PICKLE_FILE
-from collections import defaultdict
 import logging
 from search.tf_idf import calculate_tf, calculate_idf
+from resources import lemmatizer, stop_words, translator
 
 logger = logging.getLogger(__name__)
 
-
-lemmatizer: WordNetLemmatizer = WordNetLemmatizer()
-stemmer: StemmerI = PorterStemmer()
-stop_words: Set[str] = set(stopwords.words("english"))
-punctuation: str = string.punctuation + "♥•’‘€–"
-
-translator = str.maketrans("", "", punctuation)
 
 # named tuple to group together occurrences of a word in a document
 DocOccurrences = namedtuple("DocOccurrences", "filename word num_occ tf")
@@ -49,11 +40,11 @@ InvertedIndex = Dict[str, Token]
 
 
 # eventually replace with nltk.probabilty.FreqDist
+# add weight as well
 def parse_contents(file: BinaryIO, parser="lxml") -> List[DocOccurrences]:
     soup = BeautifulSoup(file.read(), features=parser)
     # remove unneeded info
     comments = soup.find_all(string=lambda element: isinstance(element, Comment))
-    # should i remove less ? maybe after adding weight
     [s.extract() for s in soup(["script", "style", "iframe", "a", "img"])]
     [c.extract() for c in comments]
 
@@ -68,7 +59,7 @@ def parse_contents(file: BinaryIO, parser="lxml") -> List[DocOccurrences]:
     ]
 
     total_words = len(filtered_text)
-    counts = get_count(filtered_text)
+    counts: FreqDist = get_count(filtered_text)
 
     return [
         DocOccurrences(
@@ -81,8 +72,8 @@ def parse_contents(file: BinaryIO, parser="lxml") -> List[DocOccurrences]:
     ]
 
 
-def get_count(words: List[str]) -> Dict[str, int]:
-    return {name: words.count(name) for name in set(words)}
+def get_count(words: List[str]) -> FreqDist:
+    return FreqDist(words)
 
 
 def merge_word_count_dicts(
@@ -109,16 +100,17 @@ def merge_word_count_dicts(
     return merged_dict
 
 
-def pickle_obj(data: InvertedIndex) -> None:
+def pickle_obj(data: InvertedIndex) -> Union[None, NoReturn]:
     try:
         with open(PICKLE_FILE, "wb") as f:
             pickle.dump(data, f)
+            return
     except Exception as e:
         logger.critical(e)
         exit(1)
 
 
-def depickle_obj() -> InvertedIndex:
+def depickle_obj() -> Union[InvertedIndex, NoReturn]:
     try:
         with open(PICKLE_FILE, "rb") as f:
             data = pickle.load(f)

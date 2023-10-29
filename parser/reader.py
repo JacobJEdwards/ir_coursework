@@ -1,10 +1,10 @@
 import multiprocessing
 from pathlib import Path
 from parser.parser import parse_contents
-from typing import Union, Dict, Tuple, List
+from typing import Union, Dict, List
 from parser.parser import DocOccurrences
 import json
-from config import VIDEOGAMES_DIR
+from config import VIDEOGAMES_DIR, PICKLE_FILE
 from parser.parser import (
     merge_word_count_dicts,
     pickle_obj,
@@ -12,7 +12,6 @@ from parser.parser import (
     InvertedIndex,
 )
 import logging
-from pprint import pprint
 
 
 logger = logging.getLogger(__name__)
@@ -29,7 +28,7 @@ def generate_object() -> InvertedIndex:
 
     needs_regen = False
     try:
-        last_pickled = Path("data.pkl").stat().st_mtime
+        last_pickled = PICKLE_FILE.stat().st_mtime
 
         for file in VIDEOGAMES_DIR.iterdir():
             if file.stat().st_mtime > last_pickled:

@@ -1,31 +1,17 @@
 from typing import List, Tuple, Dict, Set
-from nltk.stem import WordNetLemmatizer
 from nltk import word_tokenize
-from nltk.corpus import stopwords, wordnet
-import string
+from nltk.corpus import wordnet
 from parser.reader import generate_object
 from parser.parser import InvertedIndex
 from search.tf_idf import calculate_tf_idf
 import json
 from collections import defaultdict
-import pkg_resources
-from symspellpy import SymSpell, Verbosity
+from resources import lemmatizer, stop_words, translator, sym_spell
+from symspellpy import Verbosity
 
 
 SearchResults = List[Tuple[str, float]]
 # TYPE METADATA
-
-lemmatizer: WordNetLemmatizer = WordNetLemmatizer()
-stop_words = set(stopwords.words("english"))
-punctuation: str = string.punctuation + "♥•’‘€–"
-
-translator = str.maketrans("", "", punctuation)
-
-sym_spell = SymSpell(max_dictionary_edit_distance=2, prefix_length=7)
-dictionary_path = pkg_resources.resource_filename(
-    "symspellpy", "frequency_dictionary_en_82_765.txt"
-)
-sym_spell.load_dictionary(dictionary_path, term_index=0, count_index=1)
 
 
 def get_suggestions(tokens: Set[str]) -> Set[str]:
@@ -39,13 +25,15 @@ def get_suggestions(tokens: Set[str]) -> Set[str]:
     return new_tokens
 
 
-def clean_input(user_input: str) -> List[str]:
+def clean_input(user_input: str) -> Set[str]:
     tokens = word_tokenize(user_input.translate(translator))
-    return [
-        lemmatizer.lemmatize(word.lower())
-        for word in expand_query(get_suggestions(set(tokens)))
-        if word not in stop_words
-    ]
+    return set(
+        [
+            lemmatizer.lemmatize(word.lower())
+            for word in expand_query(get_suggestions(set(tokens)))
+            if word not in stop_words
+        ]
+    )
 
 
 def expand_query(query_terms: Set[str]) -> Set[str]:
@@ -58,7 +46,7 @@ def expand_query(query_terms: Set[str]) -> Set[str]:
     return new_terms
 
 
-def get_input() -> List[str]:
+def get_input() -> set[str]:
     user_input = input("Enter search term(s)")
     return clean_input(user_input)
 
@@ -90,7 +78,7 @@ def search() -> None:
 
     while True:
         user_input = get_input()
-        results = search_idf(set(user_input), ii, metadata)
+        results = search_idf(user_input, ii, metadata)
 
         for doc, score in results:
             print(f"Document: {doc}, Score: {score}")
