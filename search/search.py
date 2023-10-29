@@ -1,11 +1,11 @@
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Set
 from nltk.stem import WordNetLemmatizer
 from nltk import word_tokenize
-from nltk.corpus import stopwords
+from nltk.corpus import stopwords, wordnet
 import string
 from parser.reader import generate_object
 from parser.parser import InvertedIndex
-from search.tf_idf import calculate_idf, calculate_tf_idf, calculate_tf
+from search.tf_idf import calculate_tf_idf
 import json
 from collections import defaultdict
 
@@ -21,11 +21,22 @@ translator = str.maketrans("", "", punctuation)
 
 
 def clean_input(user_input: str) -> List[str]:
+    tokens = word_tokenize(user_input.translate(translator))
     return [
         lemmatizer.lemmatize(word.lower())
-        for word in word_tokenize(user_input.translate(translator))
+        for word in expand_query(set(tokens))
         if word not in stop_words
     ]
+
+
+def expand_query(query_terms: Set[str]) -> Set[str]:
+    new_terms = set(query_terms)
+    for term in query_terms:
+        syns = wordnet.synsets(term)
+        for syn in syns:
+            for lemma in syn.lemmas():
+                new_terms.add(lemma.name())
+    return new_terms
 
 
 def get_input() -> List[str]:
@@ -36,7 +47,7 @@ def get_input() -> List[str]:
 # need to add tf_idf -> think how many need to change implemenation (add metadata etc)
 # @lru_cache(CACHE_SIZE)
 def search_idf(
-    query_terms: Tuple, inverted_index: InvertedIndex, metadata: Dict
+    query_terms: Set[str], inverted_index: InvertedIndex, metadata: Dict
 ) -> SearchResults:
     results = defaultdict(float)
 
@@ -60,7 +71,7 @@ def search() -> None:
 
     while True:
         user_input = get_input()
-        results = search_idf(tuple(user_input), ii, metadata)
+        results = search_idf(set(user_input), ii, metadata)
 
         for doc, score in results:
             print(f"Document: {doc}, Score: {score}")

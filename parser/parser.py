@@ -28,17 +28,6 @@ translator = str.maketrans("", "", punctuation)
 DocOccurrences = namedtuple("DocOccurrences", "filename word num_occ tf")
 
 
-class TrieNode:
-    def __init__(self):
-        self.children: Dict[str, TrieNode] = defaultdict(TrieNode)
-        self.occurrences: List[DocOccurrences] = []
-
-
-class II:
-    def __init__(self):
-        self.root: TrieNode = TrieNode()
-
-
 # doc token represents an instance of a word in a particular document
 @dataclass
 class DocToken:
@@ -82,7 +71,12 @@ def parse_contents(file: BinaryIO, parser="lxml") -> List[DocOccurrences]:
     counts = get_count(filtered_text)
 
     return [
-        DocOccurrences(filename=file.name, word=name, num_occ=count, tf=calculate_tf(total_words, count))
+        DocOccurrences(
+            filename=file.name,
+            word=name,
+            num_occ=count,
+            tf=calculate_tf(total_words, count),
+        )
         for name, count in counts.items()
     ]
 
@@ -91,7 +85,9 @@ def get_count(words: List[str]) -> Dict[str, int]:
     return {name: words.count(name) for name in set(words)}
 
 
-def merge_word_count_dicts(doc_dict: Dict[str, List[DocOccurrences]], total_docs: int) -> InvertedIndex:
+def merge_word_count_dicts(
+    doc_dict: Dict[str, List[DocOccurrences]], total_docs: int
+) -> InvertedIndex:
     merged_dict: InvertedIndex = {}
 
     # Use defaultdict to store occurrences
