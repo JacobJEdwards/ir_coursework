@@ -8,6 +8,8 @@ from parser.parser import InvertedIndex
 from search.tf_idf import calculate_tf_idf
 import json
 from collections import defaultdict
+import pkg_resources
+from symspellpy import SymSpell, Verbosity
 
 
 SearchResults = List[Tuple[str, float]]
@@ -19,12 +21,29 @@ punctuation: str = string.punctuation + "♥•’‘€–"
 
 translator = str.maketrans("", "", punctuation)
 
+sym_spell = SymSpell(max_dictionary_edit_distance=2, prefix_length=7)
+dictionary_path = pkg_resources.resource_filename(
+    "symspellpy", "frequency_dictionary_en_82_765.txt"
+)
+sym_spell.load_dictionary(dictionary_path, term_index=0, count_index=1)
+
+
+def get_suggestions(tokens: Set[str]) -> Set[str]:
+    new_tokens = set(tokens)
+    for token in tokens:
+        suggestions = sym_spell.lookup(
+            token, Verbosity.CLOSEST, max_edit_distance=2, include_unknown=True
+        )
+        for suggestion in suggestions:
+            new_tokens.add(suggestion.term)
+    return new_tokens
+
 
 def clean_input(user_input: str) -> List[str]:
     tokens = word_tokenize(user_input.translate(translator))
     return [
         lemmatizer.lemmatize(word.lower())
-        for word in expand_query(set(tokens))
+        for word in expand_query(get_suggestions(set(tokens)))
         if word not in stop_words
     ]
 
