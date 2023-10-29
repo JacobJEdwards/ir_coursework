@@ -65,7 +65,7 @@ def search_idf(
 
             for occurrence in token.occurrences:
                 tf_idf = calculate_tf_idf(occurrence.tf, token.idf)
-                results[occurrence.filename] += tf_idf
+                results[occurrence.filename] += tf_idf * occurrence.weight
 
     return sorted(results.items(), key=lambda x: x[1], reverse=True)[:10]
 
