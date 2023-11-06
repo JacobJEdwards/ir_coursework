@@ -13,13 +13,14 @@ from parser.parser import (
 )
 import logging
 import asyncio
+from pprint import pprint
 
 
 logger = logging.getLogger(__name__)
 
 
 # need to check if files have changed -> store metadata -> regen and pickle if
-async def generate_object() -> Tuple[InvertedIndex, Union[DocumentMatrix, None]]:
+def generate_object() -> Tuple[InvertedIndex, Union[DocumentMatrix, None]]:
     try:
         with open("metadata.json") as f:
             metadata = json.load(f)
@@ -43,7 +44,7 @@ async def generate_object() -> Tuple[InvertedIndex, Union[DocumentMatrix, None]]
     if not needs_regen:
         return depickle_obj(), None
 
-    results = await read_dir(VIDEOGAMES_DIR)
+    results = asyncio.run(read_dir(VIDEOGAMES_DIR))
     total_docs = len(results)
     success = {}
     metadata = {
@@ -96,7 +97,7 @@ async def read_dir(
             results = []
 
             for file_path in directory.iterdir():
-                result = tg.create_task(parse_and_read(file_path))
+                result = await tg.create_task(parse_and_read(file_path))
                 results.append((file_path, result))
 
         results_dict = {file_path: result for file_path, result in results}

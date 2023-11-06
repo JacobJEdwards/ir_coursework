@@ -165,7 +165,7 @@ def parse_contents(file: BinaryIO, parser="lxml") -> List[DocOccurrences]:
             )
         )
 
-    logger.debug(occurrences)
+    # logger.debug(occurrences)
 
     return occurrences
 

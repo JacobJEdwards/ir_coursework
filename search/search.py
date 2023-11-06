@@ -113,9 +113,8 @@ def search_idf(
     return sorted(results.items(), key=lambda x: x[1], reverse=True)[:10]
 
 
-async def search() -> None:
-    ii, doc_matrix = await generate_object()
-    pprint(ii)
+def search() -> None:
+    ii, doc_matrix = generate_object()
 
     with open("metadata.json", "r") as f:
         metadata = json.load(f)

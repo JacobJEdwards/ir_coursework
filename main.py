@@ -30,10 +30,10 @@ parser.add_argument("--regen", "-r", help="Reindex the files")
 args = parser.parse_args()
 
 
-async def main() -> None:
+def main() -> None:
     logger.info("Starting up...")
-    await search()
+    search()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
