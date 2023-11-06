@@ -9,6 +9,7 @@ from collections import defaultdict
 from resources import lemmatizer, stop_words, translator, sym_spell
 from symspellpy import Verbosity
 import numpy as np
+from pprint import pprint
 
 
 SearchResults = List[Tuple[str, float]]
@@ -114,6 +115,7 @@ def search_idf(
 
 async def search() -> None:
     ii, doc_matrix = await generate_object()
+    pprint(ii)
 
     with open("metadata.json", "r") as f:
         metadata = json.load(f)
