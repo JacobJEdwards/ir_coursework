@@ -97,14 +97,17 @@ def read_dir(
             results = []
 
             for file_path in directory.iterdir():
-                result = pool.apply_async(parse_and_read, (file_path,))
-                results.append((file_path, result))
+                pool.apply_async(
+                    parse_and_read,
+                    (file_path,),
+                    callback=lambda res, fp=file_path: results.append((fp, res)),
+                )
 
             pool.close()
             pool.join()
 
             # collect results from the async tasks
-            results_dict = {file_path: result.get() for file_path, result in results}
+            results_dict = {file_path: result for file_path, result in results}
 
         return results_dict
     except Exception as e:
