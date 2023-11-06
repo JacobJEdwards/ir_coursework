@@ -1,24 +1,35 @@
 import pickle
-from pprint import pprint
 
 from bs4 import BeautifulSoup
 from bs4.element import Comment
 from nltk.tokenize import word_tokenize
 from nltk.probability import FreqDist
-from typing import List, Dict, BinaryIO, NoReturn, Union
 from dataclasses import dataclass
-from collections import namedtuple
 from config import PICKLE_FILE
+from typing import List, Dict, BinaryIO, NoReturn, Union, Tuple
 import logging
-from search.tf_idf import calculate_tf, calculate_idf
+from search.tf_idf import calculate_tf, calculate_idf, calculate_tf_idf
 from resources import lemmatizer, stop_words, translator
 from enum import Enum
 from collections import defaultdict
+import numpy as np
+
 
 logger = logging.getLogger(__name__)
 
-# named tuple to group together occurrences of a word in a document
-DocOccurrences = namedtuple("DocOccurrences", "filename word num_occ tf weight")
+
+DocumentMatrix = np.ndarray
+
+
+@dataclass
+class DocOccurrences:
+    filename: str
+    word: str
+    num_occ: int
+    tf: float
+    weight: float
+    positions: List[int]
+    tfidf: float = 0.0
 
 
 class Weight(Enum):
@@ -43,6 +54,7 @@ class Weight(Enum):
 class DocToken:
     count: int
     weight: float
+    position: int
 
 
 # token represents
@@ -52,6 +64,7 @@ class Token:
     count: int
     idf: float
     occurrences: List[DocOccurrences]
+    positions: List[List[int]]
 
 
 InvertedIndex = Dict[str, Token]
@@ -81,7 +94,7 @@ def parse_contents(file: BinaryIO, parser="lxml") -> List[DocOccurrences]:
 
     total_words = len(filtered_all_text)
 
-    for el in soup.find_all():
+    for i, el in enumerate(soup.find_all()):
         text = el.get_text().translate(translator)
 
         filtered_text = [
@@ -130,6 +143,7 @@ def parse_contents(file: BinaryIO, parser="lxml") -> List[DocOccurrences]:
                 DocToken(
                     count=count,
                     weight=weight,
+                    position=i,
                 )
             )
 
@@ -148,6 +162,7 @@ def parse_contents(file: BinaryIO, parser="lxml") -> List[DocOccurrences]:
                 num_occ=total_count,
                 tf=tf,
                 weight=total_weight,
+                positions=[occ.position for occ in occur],
             )
         )
 
@@ -162,24 +177,35 @@ def get_count(words: List[str]) -> FreqDist:
 
 def merge_word_count_dicts(
     doc_dict: Dict[str, List[DocOccurrences]], total_docs: int
-) -> InvertedIndex:
+) -> Tuple[InvertedIndex, DocumentMatrix]:
     merged_dict: InvertedIndex = {}
+
+    doc_matrix: DocumentMatrix = np.zeros((total_docs, len(doc_dict)))
 
     for name, occurrences in doc_dict.items():
         for occ in occurrences:
             if occ.word in merged_dict:
                 merged_dict[occ.word].count += occ.num_occ
                 merged_dict[occ.word].occurrences.append(occ)
+                merged_dict[occ.word].positions.extend([occ.positions])
             else:
-                merged_dict[occ.word] = Token(occ.word, occ.num_occ, 0, [occ])
+                merged_dict[occ.word] = Token(
+                    occ.word, occ.num_occ, 0, [occ], [occ.positions]
+                )
 
     for word, token in merged_dict.items():
         doc_count = len(token.occurrences)
-        token.idf = calculate_idf(total_docs, doc_count)
+        idf = calculate_idf(total_docs, doc_count)
+        token.idf = idf
+
+        for i, occ in enumerate(token.occurrences):
+            tf_idf = calculate_tf_idf(occ.tf, idf)
+            occ.tfidf = tf_idf
+            doc_matrix[i][occ.positions] = tf_idf
 
     logger.debug("Generated inverted index")
 
-    return merged_dict
+    return merged_dict, doc_matrix
 
 
 def pickle_obj(data: InvertedIndex) -> Union[None, NoReturn]:

@@ -1,7 +1,7 @@
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer, PorterStemmer, StemmerI
 import string
-from symspellpy import SymSpell, Verbosity
+from symspellpy import SymSpell
 from config import DICTIONARY_PATH
 
 

@@ -1,7 +1,7 @@
 import multiprocessing
 from pathlib import Path
 from parser.parser import parse_contents
-from typing import Union, Dict, List
+from typing import Union, Dict, List, Tuple
 from parser.parser import DocOccurrences
 import json
 from config import VIDEOGAMES_DIR, PICKLE_FILE
@@ -10,19 +10,21 @@ from parser.parser import (
     pickle_obj,
     depickle_obj,
     InvertedIndex,
+    DocumentMatrix,
 )
 import logging
+import asyncio
 
 
 logger = logging.getLogger(__name__)
 
 
 # need to check if files have changed -> store metadata -> regen and pickle if
-def generate_object() -> InvertedIndex:
+async def generate_object() -> Tuple[InvertedIndex, Union[DocumentMatrix, None]]:
     try:
         with open("metadata.json") as f:
             metadata = json.load(f)
-    except Exception as e:
+    except Exception:
         logger.error("Error loading metadata")
         metadata = {}
 
@@ -35,14 +37,14 @@ def generate_object() -> InvertedIndex:
                 logger.info("Reindexing")
                 needs_regen = True
                 break
-    except Exception as e:
+    except Exception:
         logger.error("Error reading pickle file")
         needs_regen = True
 
     if not needs_regen:
-        return depickle_obj()
+        return depickle_obj(), None
 
-    results = read_dir(VIDEOGAMES_DIR)
+    results = await read_dir(VIDEOGAMES_DIR)
     total_docs = len(results)
     success = {}
     metadata = {
@@ -69,9 +71,9 @@ def generate_object() -> InvertedIndex:
         logger.error("Error setting metadata")
         logger.error(e)
 
-    ii = merge_word_count_dicts(success, total_docs)
+    ii, doc_matrix = merge_word_count_dicts(success, total_docs)
     pickle_obj(ii)
-    return ii
+    return ii, doc_matrix
 
 
 def parse_and_read(file_path: Path) -> Union[List[DocOccurrences], Exception]:
@@ -85,7 +87,10 @@ def parse_and_read(file_path: Path) -> Union[List[DocOccurrences], Exception]:
         return e
 
 
-def read_dir(directory: Path) -> Dict[Path, Union[List[DocOccurrences], Exception]]:
+# SWITCH TO ASYNCIO
+async def read_dir(
+    directory: Path,
+) -> Dict[Path, Union[List[DocOccurrences], Exception]]:
     logger.debug("Beginning file parsing")
     try:
         with multiprocessing.Pool() as pool:
