@@ -3,6 +3,7 @@ from search.search import search
 import logging
 from config import LOG_LEVEL
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
+import asyncio
 
 logging.basicConfig(level=LOG_LEVEL)
 logger = logging.getLogger(__name__)
@@ -29,10 +30,10 @@ parser.add_argument("--regen", "-r", help="Reindex the files")
 args = parser.parse_args()
 
 
-def main() -> None:
+async def main() -> None:
     logger.info("Starting up...")
-    search()
+    await search()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

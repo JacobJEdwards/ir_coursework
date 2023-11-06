@@ -1,4 +1,3 @@
-import multiprocessing
 from pathlib import Path
 from parser.parser import parse_contents
 from typing import Union, Dict, List, Tuple
@@ -76,7 +75,7 @@ async def generate_object() -> Tuple[InvertedIndex, Union[DocumentMatrix, None]]
     return ii, doc_matrix
 
 
-def parse_and_read(file_path: Path) -> Union[List[DocOccurrences], Exception]:
+async def parse_and_read(file_path: Path) -> Union[List[DocOccurrences], Exception]:
     try:
         with open(file_path, "rb") as f:
             results = parse_contents(f)
@@ -93,19 +92,14 @@ async def read_dir(
 ) -> Dict[Path, Union[List[DocOccurrences], Exception]]:
     logger.debug("Beginning file parsing")
     try:
-        with multiprocessing.Pool() as pool:
-            # use a list of (file_path, result) tuples to store results
+        async with asyncio.TaskGroup() as tg:
             results = []
 
             for file_path in directory.iterdir():
-                result = pool.apply_async(parse_and_read, (file_path,))
+                result = tg.create_task(parse_and_read(file_path))
                 results.append((file_path, result))
 
-            pool.close()
-            pool.join()
-
-            # collect results from the async tasks
-            results_dict = {file_path: result.get() for file_path, result in results}
+        results_dict = {file_path: result for file_path, result in results}
 
         return results_dict
     except Exception as e:

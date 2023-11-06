@@ -70,7 +70,6 @@ class Token:
 InvertedIndex = Dict[str, Token]
 
 
-# eventually replace with nltk.probabilty.FreqDist
 # add weight as well
 def parse_contents(file: BinaryIO, parser="lxml") -> List[DocOccurrences]:
     soup = BeautifulSoup(file.read(), features=parser)
