@@ -13,14 +13,13 @@ from parser.parser import (
     DocumentMatrix,
 )
 import logging
-import asyncio
 
 
 logger = logging.getLogger(__name__)
 
 
 # need to check if files have changed -> store metadata -> regen and pickle if
-async def generate_object() -> Tuple[InvertedIndex, Union[DocumentMatrix, None]]:
+def generate_object() -> Tuple[InvertedIndex, Union[DocumentMatrix, None]]:
     try:
         with open("metadata.json") as f:
             metadata = json.load(f)
@@ -44,7 +43,7 @@ async def generate_object() -> Tuple[InvertedIndex, Union[DocumentMatrix, None]]
     if not needs_regen:
         return depickle_obj(), None
 
-    results = await read_dir(VIDEOGAMES_DIR)
+    results = read_dir(VIDEOGAMES_DIR)
     total_docs = len(results)
     success = {}
     metadata = {
@@ -88,7 +87,7 @@ def parse_and_read(file_path: Path) -> Union[List[DocOccurrences], Exception]:
 
 
 # SWITCH TO ASYNCIO
-async def read_dir(
+def read_dir(
     directory: Path,
 ) -> Dict[Path, Union[List[DocOccurrences], Exception]]:
     logger.debug("Beginning file parsing")
