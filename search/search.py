@@ -1,22 +1,20 @@
-from typing import List, Tuple, Set
 from nltk import word_tokenize
 from nltk.corpus import wordnet
-from parser.parser import InvertedIndex, DocumentMatrix, filter_tokens, get_strip_func
+from parser.parser import filter_tokens, get_strip_func
+from parser.types import InvertedIndex, DocumentMatrix, Metadata
 from collections import defaultdict
 from resources import translator, sym_spell
 from symspellpy import Verbosity
 import numpy as np
 from main import Context
-from parser.reader import get_metadata, index_documents, Metadata
+from parser.reader import get_metadata, index_documents
 import logging
+from search.types import SearchResults
 
 logger = logging.getLogger(__name__)
 
-SearchResults = List[Tuple[str, float]]
-# TYPE METADATA
 
-
-def get_suggestions(tokens: Set[str], print_terms: bool = False) -> Set[str]:
+def get_suggestions(tokens: set[str], print_terms: bool = False) -> set[str]:
     new_tokens = set(tokens)
     for token in tokens:
         suggestions = sym_spell.lookup(
@@ -48,7 +46,7 @@ def get_suggestions(tokens: Set[str], print_terms: bool = False) -> Set[str]:
     return new_tokens
 
 
-def expand_query(query_terms: Set[str], print_terms: bool = False) -> Set[str]:
+def expand_query(query_terms: set[str], print_terms: bool = False) -> set[str]:
     new_terms = set(query_terms)
     for term in query_terms:
         syns = wordnet.synsets(term)
@@ -62,8 +60,8 @@ def expand_query(query_terms: Set[str], print_terms: bool = False) -> Set[str]:
 
 
 def _clean_tokenized_input(
-    ctx: Context, tokens: Set[str], metadata: Metadata
-) -> Set[str]:
+    ctx: Context, tokens: set[str], metadata: Metadata
+) -> set[str]:
     if ctx.spellcheck:
         tokens = get_suggestions(tokens, ctx.verbose)
 
@@ -78,12 +76,12 @@ def _clean_tokenized_input(
     return set(tokens)
 
 
-def clean_input(ctx: Context, user_input: str, metadata: Metadata) -> Set[str]:
+def clean_input(ctx: Context, user_input: str, metadata: Metadata) -> set[str]:
     tokens = word_tokenize(user_input.translate(translator))
     return _clean_tokenized_input(ctx, tokens, metadata)
 
 
-def get_input(ctx: Context, metadata: Metadata) -> Set[str]:
+def get_input(ctx: Context, metadata: Metadata) -> set[str]:
     user_input = input("Enter search term(s): ")
     print()
     return clean_input(ctx, user_input, metadata)
@@ -102,7 +100,7 @@ def cosine_similarity(query_vector: np.ndarray, doc_vector: np.ndarray) -> np.nd
 # @lru_cache(CACHE_SIZE)
 def search_idf(
     ctx: Context,
-    query_terms: Set[str],
+    query_terms: set[str],
     inverted_index: InvertedIndex,
     doc_matrix: DocumentMatrix,
     metadata: Metadata,
@@ -122,6 +120,25 @@ def search_idf(
     return sorted(results.items(), key=lambda x: x[1], reverse=True)[:10]
 
 
+def print_results(ctx: Context, results: SearchResults, metadata: Metadata) -> None:
+    if len(results) == 0:
+        print("No results found")
+        return
+
+    for i, (doc, score) in enumerate(results):
+        print(f"{int(i)+1}:")
+        if doc in metadata["files"]:
+            info: dict = metadata["files"][doc]["info"]
+            for key, val in info.items():
+                print(f"{key}: {val}")
+
+            print(f"Score: {score}")
+        else:
+            print(f"Document: {doc}, Score: {score}")
+
+        print()
+
+
 def search(ctx: Context) -> None:
     ii, doc_matrix = index_documents(ctx)
 
@@ -132,19 +149,4 @@ def search(ctx: Context) -> None:
 
         results: SearchResults = search_idf(ctx, user_input, ii, doc_matrix, metadata)
 
-        if len(results) == 0:
-            print("No results found")
-            continue
-
-        for i, (doc, score) in enumerate(results):
-            print(f"{int(i)+1}:")
-            if doc in metadata:
-                info: dict = metadata[doc]["info"]
-                for key, val in info.items():
-                    print(f"{key}: {val}")
-
-                print(f"Score: {score}")
-            else:
-                print(f"Document: {doc}, Score: {score}")
-
-            print()
+        print_results(ctx, results, metadata)

@@ -6,18 +6,12 @@ from bs4 import BeautifulSoup
 from bs4.element import Comment
 from nltk.tokenize import word_tokenize
 from nltk.probability import FreqDist
-from dataclasses import dataclass
 from config import PICKLE_FILE
 from typing import (
-    List,
-    Dict,
     BinaryIO,
     NoReturn,
-    Union,
-    Tuple,
     Iterable,
     assert_never,
-    Callable,
     Literal,
 )
 import logging
@@ -26,24 +20,18 @@ from resources import lemmatizer, stop_words, translator, stemmer
 from enum import Enum
 from collections import defaultdict
 import numpy as np
+from parser.types import (
+    InvertedIndex,
+    StripFunc,
+    DocumentMatrix,
+    DocOccurrences,
+    DocToken,
+    Metadata,
+    Token,
+)
 
-Metadata = Dict
 
 logger = logging.getLogger(__name__)
-
-
-DocumentMatrix = np.ndarray
-
-
-@dataclass
-class DocOccurrences:
-    filename: str
-    word: str
-    num_occ: int
-    tf: float
-    weight: float
-    positions: List[int]
-    tfidf: float = 0.0
 
 
 class Weight(Enum):
@@ -62,70 +50,48 @@ class Weight(Enum):
     A = 1.0
     META = 1.2
 
+    @classmethod
+    def get_word_weight(cls, tag_name: str) -> float:
+        match tag_name:
+            case "h1":
+                weight = cls.H1.value
+            case "h2":
+                weight = cls.H2.value
+            case "h3":
+                weight = cls.H3.value
+            case "h4":
+                weight = cls.H4.value
+            case "h5":
+                weight = cls.H5.value
+            case "h6":
+                weight = cls.H6.value
+            case "p":
+                weight = cls.P.value
+            case "title":
+                weight = cls.TITLE.value
+            case "strong":
+                weight = cls.STRONG.value
+            case "em":
+                weight = cls.EM.value
+            case "b":
+                weight = cls.BOLD.value
+            case "i":
+                weight = cls.ITALIC.value
+            case "meta":
+                weight = cls.META.value
+            case "a":
+                weight = cls.A.value
+            case _:
+                weight = 1.0
 
-# doc token represents an instance of a word in a particular document
-@dataclass
-class DocToken:
-    count: int
-    weight: float
-    position: int
-
-
-# token represents
-@dataclass
-class Token:
-    word: str
-    count: int
-    idf: float
-    occurrences: List[DocOccurrences]
-    positions: List[List[int]]
-
-
-InvertedIndex = Dict[str, Token]
-StripFunc = Callable[[str], str]
-
-
-def get_word_weight(tag_name: str) -> float:
-    match tag_name:
-        case "h1":
-            weight = Weight.H1.value
-        case "h2":
-            weight = Weight.H2.value
-        case "h3":
-            weight = Weight.H3.value
-        case "h4":
-            weight = Weight.H4.value
-        case "h5":
-            weight = Weight.H5.value
-        case "h6":
-            weight = Weight.H6.value
-        case "p":
-            weight = Weight.P.value
-        case "title":
-            weight = Weight.TITLE.value
-        case "strong":
-            weight = Weight.STRONG.value
-        case "em":
-            weight = Weight.EM.value
-        case "b":
-            weight = Weight.BOLD.value
-        case "i":
-            weight = Weight.ITALIC.value
-        case "meta":
-            weight = Weight.META.value
-        case "a":
-            weight = Weight.A.value
-        case _:
-            weight = 1.0
-
-    return weight
+        return weight
 
 
-def filter_text(strip_func: StripFunc, text: str) -> List[str]:
+def filter_text(strip_func: StripFunc, text: str) -> list[str]:
     return filter_tokens(strip_func, word_tokenize(text))
 
 
-def filter_tokens(strip_func: StripFunc, tokens: Iterable[str]) -> List[str]:
+def filter_tokens(strip_func: StripFunc, tokens: Iterable[str]) -> list[str]:
     return [strip_func(word) for word in tokens if word not in stop_words]
 
 
@@ -139,14 +105,14 @@ def get_strip_func(strip_type: Literal["lemmatize", "stem"]) -> StripFunc:
             assert_never("Unreachable")
 
 
-def parse_contents(ctx: Context, file: BinaryIO, parser="lxml") -> List[DocOccurrences]:
+def parse_contents(ctx: Context, file: BinaryIO, parser="lxml") -> list[DocOccurrences]:
     soup = BeautifulSoup(file.read(), features=parser)
     # remove unneeded info
     comments = soup.find_all(string=lambda element: isinstance(element, Comment))
     [s.extract() for s in soup(["script", "style", "iframe", "a", "img"])]
     [c.extract() for c in comments]
 
-    occurrences: List[DocOccurrences] = []
+    occurrences: list[DocOccurrences] = []
 
     all_text = soup.get_text().translate(translator).lower()
 
@@ -160,7 +126,7 @@ def parse_contents(ctx: Context, file: BinaryIO, parser="lxml") -> List[DocOccur
 
         filtered_text = filter_text(get_strip_func(ctx.stripper), text)
 
-        weight = get_word_weight(el.name)
+        weight = Weight.get_word_weight(el.name)
         counts: FreqDist = get_count(filtered_text)
 
         for name, count in counts.items():
@@ -196,13 +162,13 @@ def parse_contents(ctx: Context, file: BinaryIO, parser="lxml") -> List[DocOccur
     return occurrences
 
 
-def get_count(words: List[str]) -> FreqDist:
+def get_count(words: list[str]) -> FreqDist:
     return FreqDist(words)
 
 
 def merge_word_count_dicts(
-    ctx: Context, doc_dict: Dict[Path, List[DocOccurrences]], metadata: Metadata
-) -> Tuple[InvertedIndex, DocumentMatrix]:
+    ctx: Context, doc_dict: dict[Path, list[DocOccurrences]], metadata: Metadata
+) -> tuple[InvertedIndex, DocumentMatrix]:
     merged_dict: InvertedIndex = {}
 
     doc_matrix: DocumentMatrix = np.zeros((metadata["total_docs"], len(doc_dict)))
@@ -233,7 +199,8 @@ def merge_word_count_dicts(
     return merged_dict, doc_matrix
 
 
-def pickle_obj(ctx: Context, data: InvertedIndex) -> Union[None, NoReturn]:
+# TODO: pickle multiples files based on ctx
+def pickle_obj(ctx: Context, data: InvertedIndex) -> None | NoReturn:
     if ctx.verbose:
         logger.info("Pickling index")
     try:
@@ -245,7 +212,7 @@ def pickle_obj(ctx: Context, data: InvertedIndex) -> Union[None, NoReturn]:
         exit(1)
 
 
-def depickle_obj(ctx: Context) -> Union[InvertedIndex, NoReturn]:
+def depickle_obj(ctx: Context) -> InvertedIndex | NoReturn:
     if ctx.verbose:
         logger.info("Depickling index")
     try:

@@ -10,7 +10,7 @@ from typing import Literal
 class Context:
     reindex: bool = False
     stripper: Literal["lemmatize", "stem"] = "lemmatize"
-    mp: bool = True
+    parser_type: Literal["async", "mp", "sync"] = "async"
     expand: bool = True
     spellcheck: bool = True
     weighted: bool = True
@@ -39,7 +39,13 @@ parser.add_argument(
 parser.add_argument("--regen", "-r", action="store_true", help="Reindex the files")
 
 parser.add_argument(
-    "--sync", "-sy", help="use multiprocessing", action="store_true", dest="sync"
+    "--parser",
+    "-p",
+    help="choose how files are parsed",
+    type=str,
+    dest="parser_type",
+    choices=["sync", "async", "mp"],
+    default="async",
 )
 
 parser.add_argument(
@@ -78,7 +84,7 @@ def main() -> None:
         ctx = Context(stripper=args.stripper, reindex=args.regen, verbose=args.verbose)
     else:
         ctx = Context(
-            mp=not args.sync,
+            parser_type=args.parser_type,
             spellcheck=args.spellcheck,
             expand=args.expand,
             weighted=args.weight,

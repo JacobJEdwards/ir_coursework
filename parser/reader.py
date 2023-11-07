@@ -1,27 +1,29 @@
 import multiprocessing
+from typing import assert_never
 from main import Context
 from pathlib import Path
-from typing import Union, Dict, List, Tuple, Iterable
 import json
 from config import VIDEOGAMES_DIR, PICKLE_FILE, VIDEOGAME_LABELS
 from parser.parser import (
     merge_word_count_dicts,
     pickle_obj,
     depickle_obj,
-    InvertedIndex,
-    DocumentMatrix,
-    DocOccurrences,
     parse_contents,
 )
+from parser.types import InvertedIndex, DocumentMatrix, Metadata, DocOccurrences
 import logging
 from functools import wraps
 from time import time
 import csv
+import asyncio
 
 
 def timeit(func):
     @wraps(func)
     def wrap(*args, **kw):
+        if not args[0].verbose:
+            return func(*args, **kw)
+
         ts = time()
         result = func(*args, **kw)
         te = time()
@@ -36,10 +38,7 @@ def timeit(func):
 logger = logging.getLogger(__name__)
 
 
-Metadata = Dict
-
-
-def get_metadata(ctx) -> Union[Metadata, None]:
+def get_metadata(ctx) -> Metadata | None:
     if ctx.verbose:
         logger.info("Loading metadata")
 
@@ -75,7 +74,8 @@ def needs_reindexing(ctx: Context) -> bool:
 
 
 # need to check if files have changed -> store metadata -> regen and pickle if
-def index_documents(ctx: Context) -> Tuple[InvertedIndex, Union[DocumentMatrix, None]]:
+@timeit
+def index_documents(ctx: Context) -> tuple[InvertedIndex, DocumentMatrix | None]:
     needs_regen = needs_reindexing(ctx)
 
     if not needs_regen:
@@ -101,20 +101,21 @@ def index_documents(ctx: Context) -> Tuple[InvertedIndex, Union[DocumentMatrix, 
     return ii, doc_matrix
 
 
-def generate_metadata(ctx: Context, files: List[Path]) -> Metadata:
+def generate_metadata(ctx: Context, files: list[Path]) -> Metadata:
     if ctx.verbose:
         logger.info("Generating metadata")
 
-    metadata = {
+    metadata: Metadata = {
         "total_docs": len(files),
         "stripper": ctx.stripper,
+        "files": {},
     }
 
     try:
         with open(VIDEOGAME_LABELS, "r") as f:
             reader = csv.DictReader(f)
 
-            metadata.update(
+            metadata["files"].update(
                 {
                     str(file_path): {
                         "last_modified": file_path.stat().st_mtime,
@@ -142,7 +143,7 @@ def generate_metadata(ctx: Context, files: List[Path]) -> Metadata:
     return metadata
 
 
-def parse_file(ctx: Context, file_path: Path) -> Union[List[DocOccurrences], Exception]:
+def parse_file(ctx: Context, file_path: Path) -> list[DocOccurrences] | Exception:
     try:
         with open(file_path, "rb") as f:
             results = parse_contents(ctx, f)
@@ -153,18 +154,27 @@ def parse_file(ctx: Context, file_path: Path) -> Union[List[DocOccurrences], Exc
         return e
 
 
+@timeit
 def parse_dir(
     ctx: Context,
     directory: Path,
-) -> Dict[Path, Union[List[DocOccurrences], Exception]]:
-    return _parse_dir_mp(ctx, directory) if ctx.mp else _parse_dir_sync(ctx, directory)
+) -> dict[Path, list[DocOccurrences] | Exception]:
+    match ctx.parser_type:
+        case "async":
+            return asyncio.run(_parse_dir_async(ctx, directory))
+        case "sync":
+            return _parse_dir_sync(ctx, directory)
+        case "mp":
+            return _parse_dir_mp(ctx, directory)
+        case _:
+            assert_never("Unreachable")
 
 
 @timeit
 def _parse_dir_sync(
     ctx: Context,
     directory: Path,
-) -> Dict[Path, Union[List[DocOccurrences], Exception]]:
+) -> dict[Path, list[DocOccurrences] | Exception]:
     try:
         results = map(lambda file: (file, parse_file(ctx, file)), directory.iterdir())
 
@@ -178,7 +188,7 @@ def _parse_dir_sync(
 def _parse_dir_mp(
     ctx: Context,
     directory: Path,
-) -> Dict[Path, Union[List[DocOccurrences], Exception]]:
+) -> dict[Path, list[DocOccurrences] | Exception]:
     logger.debug("Beginning file parsing")
     try:
         with multiprocessing.Pool() as pool:
@@ -200,6 +210,40 @@ def _parse_dir_mp(
 
             # collect results from the async tasks
             results_dict = {file_path: result for file_path, result in results}
+
+        return results_dict
+    except Exception as e:
+        logger.critical(e)
+        exit(1)
+
+
+async def _parse_file_async(
+    ctx: Context, file_path: Path
+) -> list[DocOccurrences] | Exception:
+    try:
+        with open(file_path, "rb") as f:
+            results = parse_contents(ctx, f)
+        return results
+    except Exception as e:
+        # change the exception handling
+        e.add_note(f"Error reading/parsing {file_path}: {str(e)}")
+        return e
+
+
+@timeit
+async def _parse_dir_async(
+    ctx: Context,
+    directory: Path,
+) -> dict[Path, list[DocOccurrences] | Exception]:
+    try:
+        async with asyncio.TaskGroup() as tg:
+            results = []
+
+            for file_path in directory.iterdir():
+                result = await tg.create_task(_parse_file_async(ctx, file_path))
+                results.append((file_path, result))
+
+        results_dict = {file_path: result for file_path, result in results}
 
         return results_dict
     except Exception as e:
