@@ -1,5 +1,5 @@
 from nltk import word_tokenize
-from parser.reader import timeit
+from typing import assert_never
 from nltk.corpus import wordnet
 from parser.parser import filter_tokens, get_strip_func
 from parser.types import InvertedIndex, DocumentMatrix, Metadata
@@ -10,8 +10,9 @@ import numpy as np
 from main import Context
 from parser.reader import get_metadata, index_documents
 import logging
-from search.types import SearchResults
+from search.types import SearchResults, SearchResult
 from config import VOCAB_PATH
+from resources import stop_words
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +71,7 @@ def _clean_tokenized_input(
     if ctx.expand:
         tokens = expand_query(tokens, ctx.verbose)
 
-    tokens = filter_tokens(get_strip_func(metadata["stripper"]), tokens)
+    tokens = filter_tokens(get_strip_func(ctx.stripper), tokens)
 
     if ctx.verbose:
         logger.info(f"Final tokens: {tokens}\n")
@@ -79,7 +80,12 @@ def _clean_tokenized_input(
 
 
 def clean_input(ctx: Context, user_input: str, metadata: Metadata) -> set[str]:
-    tokens = word_tokenize(user_input.translate(translator))
+    # simple cleaner - prevent spell errors on stopwords (not in dictionary)
+    tokens = {
+        token
+        for token in word_tokenize(user_input.translate(translator).lower())
+        if token not in stop_words
+    }
     return _clean_tokenized_input(ctx, tokens, metadata)
 
 
@@ -98,8 +104,6 @@ def cosine_similarity(query_vector: np.ndarray, doc_vector: np.ndarray) -> np.nd
     return dot_product / (query_norm * doc_norms)
 
 
-# need to add tf_idf -> think how many need to change implemenation (add metadata etc)
-# @lru_cache(CACHE_SIZE)
 def search_idf(
     ctx: Context,
     query_terms: set[str],
@@ -114,12 +118,39 @@ def search_idf(
             token = inverted_index[term]
 
             for occurrence in token.occurrences:
+                match ctx.scorer:
+                    case "tfidf":
+                        score = occurrence.tfidf
+                    case "bm25":
+                        score = occurrence.bm25
+                    case "bm25+":
+                        score = occurrence.bm25_plus
+                    case _:
+                        assert_never("Unreachable")
+
                 if ctx.weighted:
-                    results[occurrence.filename] += occurrence.tfidf * occurrence.weight
+                    results[occurrence.filename] += score * occurrence.weight
                 else:
-                    results[occurrence.filename] += occurrence.tfidf
+                    results[occurrence.filename] += score
 
     return sorted(results.items(), key=lambda x: x[1], reverse=True)[:10]
+
+
+def print_result(ctx: Context, result: SearchResult, metadata: Metadata) -> None:
+    doc, score = result
+
+    if doc in metadata["files"] and metadata["files"][doc]["info"] is not None:
+        info: dict = metadata["files"][doc]["info"]
+        for key, val in info.items():
+            print(f"{key}: {val}")
+
+    else:
+        print(f"Document: {doc}")
+
+    if ctx.verbose:
+        print(f"Score: {score}")
+
+    print()
 
 
 def print_results(ctx: Context, results: SearchResults, metadata: Metadata) -> None:
@@ -129,18 +160,10 @@ def print_results(ctx: Context, results: SearchResults, metadata: Metadata) -> N
 
     for i, (doc, score) in enumerate(results):
         print(f"{int(i)+1}:")
-        if doc in metadata["files"]:
-            info: dict = metadata["files"][doc]["info"]
-            for key, val in info.items():
-                print(f"{key}: {val}")
-
-            print(f"Score: {score}")
-        else:
-            print(f"Document: {doc}, Score: {score}")
-
-        print()
+        print_result(ctx, (doc, score), metadata)
 
 
+# issue with this is that the vocab will have been lemmed or stemmed
 def generate_vocab(ctx: Context, vocab: InvertedIndex) -> None:
     if ctx.verbose:
         logger.info("Generating dictionary")
@@ -162,7 +185,5 @@ def search(ctx: Context) -> None:
 
     while True:
         user_input = get_input(ctx, metadata)
-
         results: SearchResults = search_idf(ctx, user_input, ii, doc_matrix, metadata)
-
         print_results(ctx, results, metadata)

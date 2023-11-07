@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 from bs4.element import Comment
 from nltk.tokenize import word_tokenize
 from nltk.probability import FreqDist
-from config import PICKLE_FILE, PICKLE_DIR
+from config import PICKLE_DIR
 from typing import (
     BinaryIO,
     NoReturn,
@@ -15,7 +15,7 @@ from typing import (
     Literal,
 )
 import logging
-from search.tf_idf import calculate_tf, calculate_idf, calculate_tf_idf
+from search.ranking import calculate_tf, calculate_idf, calculate_tf_idf, calculate_bm25
 from resources import lemmatizer, stop_words, translator, stemmer
 from enum import Enum
 from collections import defaultdict
@@ -28,6 +28,8 @@ from parser.types import (
     DocToken,
     Metadata,
     Token,
+    FileParseSuccess,
+    ParsedDirResults,
 )
 
 
@@ -105,7 +107,7 @@ def get_strip_func(strip_type: Literal["lemmatize", "stem"]) -> StripFunc:
             assert_never("Unreachable")
 
 
-def parse_contents(ctx: Context, file: BinaryIO, parser="lxml") -> list[DocOccurrences]:
+def parse_contents(ctx: Context, file: BinaryIO, parser="lxml") -> FileParseSuccess:
     soup = BeautifulSoup(file.read(), features=parser)
     # remove unneeded info
     comments = soup.find_all(string=lambda element: isinstance(element, Comment))
@@ -159,7 +161,7 @@ def parse_contents(ctx: Context, file: BinaryIO, parser="lxml") -> list[DocOccur
             )
         )
 
-    return occurrences
+    return {"result": occurrences, "word_count": total_words}
 
 
 def get_count(words: list[str]) -> FreqDist:
@@ -167,7 +169,7 @@ def get_count(words: list[str]) -> FreqDist:
 
 
 def merge_word_count_dicts(
-    ctx: Context, doc_dict: dict[Path, list[DocOccurrences]], metadata: Metadata
+    ctx: Context, doc_dict: ParsedDirResults, metadata: Metadata
 ) -> tuple[InvertedIndex, DocumentMatrix]:
     merged_dict: InvertedIndex = {}
 
@@ -181,20 +183,35 @@ def merge_word_count_dicts(
                 merged_dict[occ.word].positions.extend([occ.positions])
             else:
                 merged_dict[occ.word] = Token(
-                    occ.word, occ.num_occ, 0, [occ], [occ.positions]
+                    occ.word, occ.num_occ, 0, 0, [occ], [occ.positions]
                 )
 
     for word, token in merged_dict.items():
         doc_count = len(token.occurrences)
+
         idf = calculate_idf(metadata["total_docs"], doc_count)
+        bm25_idf = calculate_idf(metadata["total_docs"], doc_count, bm25=True)
+
         token.idf = idf
+        token.bm25_idf = bm25_idf
 
         for i, occ in enumerate(token.occurrences):
+            doc_wc = metadata["files"][occ.filename]["word_count"]
+
             tf_idf = calculate_tf_idf(occ.tf, idf)
+            bm25 = calculate_bm25(
+                occ.tf, bm25_idf, doc_wc, metadata["average_wc"], plus=False
+            )
+            bm25_plus = calculate_bm25(
+                occ.tf, bm25_idf, doc_wc, metadata["average_wc"], plus=False
+            )
             occ.tfidf = tf_idf
+            occ.bm25 = bm25
+            occ.bm25_plus = bm25_plus
             doc_matrix[i][occ.positions] = tf_idf
 
-    logger.debug("Generated inverted index")
+    if ctx.verbose:
+        logger.info("Generated inverted index")
 
     return merged_dict, doc_matrix
 
@@ -204,7 +221,6 @@ def get_pickle_name(stripper: Literal["lemmatize", "stem"]) -> Path:
     return PICKLE_DIR / f"{stripper}.pkl"
 
 
-# TODO: pickle multiples files based on ctx
 def pickle_obj(ctx: Context, data: InvertedIndex) -> None | NoReturn:
     if ctx.verbose:
         logger.info("Pickling index")

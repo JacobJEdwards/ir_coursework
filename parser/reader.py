@@ -12,29 +12,19 @@ from parser.parser import (
     parse_contents,
     get_pickle_name,
 )
-from parser.types import InvertedIndex, DocumentMatrix, Metadata, DocOccurrences
+from parser.types import (
+    InvertedIndex,
+    DocumentMatrix,
+    Metadata,
+    ParsedDir,
+    ParsedFile,
+    ParsedDirResults,
+    ParsedDirSuccess,
+)
+from utils import timeit
 import logging
-from functools import wraps
-from time import time
 import csv
 import asyncio
-
-
-def timeit(func):
-    @wraps(func)
-    def wrap(*args, **kw):
-        if not args[0].verbose:
-            return func(*args, **kw)
-
-        ts = time()
-        result = func(*args, **kw)
-        te = time()
-        print(
-            "func:%r args:[%r, %r] took: %2.4f sec" % (func.__name__, args, kw, te - ts)
-        )
-        return result
-
-    return wrap
 
 
 logger = logging.getLogger(__name__)
@@ -90,32 +80,42 @@ def index_documents(ctx: Context) -> tuple[InvertedIndex, DocumentMatrix | None]
 
     results = parse_dir(ctx, VIDEOGAMES_DIR)
 
-    success = {}
+    success: ParsedDirSuccess = {}
 
     # filepath is of type Path, result of type DocOccurrences
-    for file_path, result in results.items():
-        if not isinstance(result, Exception):
-            success[file_path] = result
-
+    for file_path, parse_result in results.items():
+        if not isinstance(parse_result, Exception):
+            success[file_path] = parse_result
         else:
             logger.warning(f"File: {file_path}")
-            logger.warning(result)
+            logger.warning(parse_result)
 
-    metadata = generate_metadata(ctx, list(success.keys()))
+    metadata = generate_metadata(ctx, success)
 
-    ii, doc_matrix = merge_word_count_dicts(ctx, success, metadata)
+    result_dict: ParsedDirResults = {
+        path: val["result"] for path, val in success.items()
+    }
+
+    ii, doc_matrix = merge_word_count_dicts(ctx, result_dict, metadata)
     pickle_obj(ctx, ii)
     return ii, doc_matrix
 
 
-def generate_metadata(ctx: Context, files: list[Path]) -> Metadata:
+def get_average_wc(metadata: Metadata) -> float:
+    return sum(
+        [metadata["files"][file]["word_count"] for file in metadata["files"]]
+    ) / len(metadata["files"])
+
+
+def generate_metadata(ctx: Context, info: ParsedDirSuccess) -> Metadata:
     if ctx.verbose:
         logger.info("Generating metadata")
 
     metadata: Metadata = {
-        "total_docs": len(files),
+        "total_docs": len(info),
         "stripper": ctx.stripper,
         "files": {},
+        "average_wc": 0,
     }
 
     try:
@@ -126,12 +126,27 @@ def generate_metadata(ctx: Context, files: list[Path]) -> Metadata:
                 {
                     str(file_path): {
                         "last_modified": file_path.stat().st_mtime,
+                        "file_size": file_path.stat().st_size,
                         "info": line,
+                        "word_count": info[file_path]["word_count"],
                     }
                     for line in reader
-                    for file_path in files
+                    for file_path in info.keys()
                     if str(line["url"]).replace("ps2.gamespy.com/", "")
                     == str(file_path)
+                }
+            )
+
+            metadata["files"].update(
+                {
+                    str(file_path): {
+                        "last_modified": file_path.stat().st_mtime,
+                        "file_size": file_path.stat().st_size,
+                        "info": None,
+                        "word_count": info[file_path]["word_count"],
+                    }
+                    for file_path in info.keys()
+                    if str(file_path) not in metadata["files"]
                 }
             )
 
@@ -139,6 +154,8 @@ def generate_metadata(ctx: Context, files: list[Path]) -> Metadata:
         logger.error("Error reading labels")
     except csv.Error:
         logger.error("Error parsing csv")
+
+    metadata["average_wc"] = get_average_wc(metadata)
 
     try:
         with open("metadata.json", "w") as f:
@@ -150,7 +167,7 @@ def generate_metadata(ctx: Context, files: list[Path]) -> Metadata:
     return metadata
 
 
-def parse_file(ctx: Context, file_path: Path) -> list[DocOccurrences] | Exception:
+def _parse_file(ctx: Context, file_path: Path) -> ParsedFile:
     try:
         with open(file_path, "rb") as f:
             results = parse_contents(ctx, f)
@@ -162,11 +179,21 @@ def parse_file(ctx: Context, file_path: Path) -> list[DocOccurrences] | Exceptio
         return e
 
 
+async def _parse_file_async(ctx: Context, file_path: Path) -> ParsedFile:
+    try:
+        with open(file_path, "rb") as f:
+            results = parse_contents(ctx, f)
+        return results
+    except Exception as e:
+        e.add_note(f"Error reading/parsing {file_path}: {str(e)}")
+        return e
+
+
 @timeit
 def parse_dir(
     ctx: Context,
     directory: Path,
-) -> dict[Path, list[DocOccurrences] | Exception]:
+) -> ParsedDir:
     if not directory.is_dir():
         logger.critical("Cannot find files")
         exit(1)
@@ -188,9 +215,9 @@ def parse_dir(
 def _parse_dir_sync(
     ctx: Context,
     directory: Path,
-) -> dict[Path, list[DocOccurrences] | Exception]:
+) -> ParsedDir:
     try:
-        results = map(lambda file: (file, parse_file(ctx, file)), directory.iterdir())
+        results = map(lambda file: (file, _parse_file(ctx, file)), directory.iterdir())
 
         return {file_path: result for file_path, result in results}
     except Exception as e:
@@ -202,7 +229,7 @@ def _parse_dir_sync(
 def _parse_dir_mp(
     ctx: Context,
     directory: Path,
-) -> dict[Path, list[DocOccurrences] | Exception]:
+) -> ParsedDir:
     logger.debug("Beginning file parsing")
     try:
         with multiprocessing.Pool() as pool:
@@ -211,7 +238,7 @@ def _parse_dir_mp(
 
             for file_path in directory.iterdir():
                 pool.apply_async(
-                    parse_file,
+                    _parse_file,
                     (
                         ctx,
                         file_path,
@@ -231,23 +258,10 @@ def _parse_dir_mp(
         exit(1)
 
 
-async def _parse_file_async(
-    ctx: Context, file_path: Path
-) -> list[DocOccurrences] | Exception:
-    try:
-        with open(file_path, "rb") as f:
-            results = parse_contents(ctx, f)
-        return results
-    except Exception as e:
-        # change the exception handling
-        e.add_note(f"Error reading/parsing {file_path}: {str(e)}")
-        return e
-
-
 async def _parse_dir_async(
     ctx: Context,
     directory: Path,
-) -> dict[Path, list[DocOccurrences] | Exception]:
+) -> ParsedDir:
     try:
         async with asyncio.TaskGroup() as tg:
             results = []
@@ -265,15 +279,13 @@ async def _parse_dir_async(
 
 
 @timeit
-def _parse_dir_mt(
-    ctx: Context, directory: Path
-) -> dict[Path, list[DocOccurrences] | Exception]:
+def _parse_dir_mt(ctx: Context, directory: Path) -> ParsedDir:
     results = {}
 
     with concurrent.futures.ThreadPoolExecutor() as executor:
         # Use a list of (future, file_path) tuples to associate results with file paths
         futures = {
-            executor.submit(parse_file, ctx, file_path): file_path
+            executor.submit(_parse_file, ctx, file_path): file_path
             for file_path in directory.iterdir()
         }
 
