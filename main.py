@@ -44,7 +44,7 @@ parser.add_argument(
     help="choose how files are parsed",
     type=str,
     dest="parser_type",
-    choices=["sync", "async", "mp"],
+    choices=["sync", "async", "mp", "mt"],
     default="async",
 )
 
@@ -92,6 +92,8 @@ def main() -> None:
             reindex=args.regen,
             verbose=args.verbose,
         )
+
+    print(hash(ctx.parser_type))
 
     if ctx.verbose:
         logger.info("Starting up...")

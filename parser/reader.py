@@ -1,4 +1,5 @@
 import multiprocessing
+import concurrent.futures
 from typing import assert_never
 from main import Context
 from pathlib import Path
@@ -150,6 +151,7 @@ def parse_file(ctx: Context, file_path: Path) -> list[DocOccurrences] | Exceptio
         return results
     except Exception as e:
         # change the exception handling
+        logger.error(f"Error reading/parsing {file_path}: {str(e)}")
         e.add_note(f"Error reading/parsing {file_path}: {str(e)}")
         return e
 
@@ -159,6 +161,10 @@ def parse_dir(
     ctx: Context,
     directory: Path,
 ) -> dict[Path, list[DocOccurrences] | Exception]:
+    if not directory.is_dir():
+        logger.critical("Cannot find files")
+        exit(1)
+
     match ctx.parser_type:
         case "async":
             return asyncio.run(_parse_dir_async(ctx, directory))
@@ -166,6 +172,8 @@ def parse_dir(
             return _parse_dir_sync(ctx, directory)
         case "mp":
             return _parse_dir_mp(ctx, directory)
+        case "mt":
+            return _parse_dir_mt(ctx, directory)
         case _:
             assert_never("Unreachable")
 
@@ -230,7 +238,6 @@ async def _parse_file_async(
         return e
 
 
-@timeit
 async def _parse_dir_async(
     ctx: Context,
     directory: Path,
@@ -249,3 +256,24 @@ async def _parse_dir_async(
     except Exception as e:
         logger.critical(e)
         exit(1)
+
+
+@timeit
+def _parse_dir_mt(
+    ctx: Context, directory: Path
+) -> dict[Path, list[DocOccurrences] | Exception]:
+    results = {}
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        # Use a list of (future, file_path) tuples to associate results with file paths
+        futures = {
+            executor.submit(parse_file, ctx, file_path): file_path
+            for file_path in directory.iterdir()
+        }
+
+        for future in concurrent.futures.as_completed(futures):
+            file_path = futures[future]
+            result = future.result()
+            results[file_path] = result
+
+    return results
