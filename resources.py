@@ -13,4 +13,3 @@ stemmer: StemmerI = PorterStemmer()
 translator = str.maketrans("", "", punctuation)
 
 sym_spell = SymSpell(max_dictionary_edit_distance=2, prefix_length=7)
-sym_spell.load_dictionary(DICTIONARY_PATH, term_index=0, count_index=1)

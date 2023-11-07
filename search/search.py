@@ -1,4 +1,5 @@
 from nltk import word_tokenize
+from parser.reader import timeit
 from nltk.corpus import wordnet
 from parser.parser import filter_tokens, get_strip_func
 from parser.types import InvertedIndex, DocumentMatrix, Metadata
@@ -10,6 +11,7 @@ from main import Context
 from parser.reader import get_metadata, index_documents
 import logging
 from search.types import SearchResults
+from config import VOCAB_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -139,8 +141,22 @@ def print_results(ctx: Context, results: SearchResults, metadata: Metadata) -> N
         print()
 
 
+def generate_vocab(ctx: Context, vocab: InvertedIndex) -> None:
+    if ctx.verbose:
+        logger.info("Generating dictionary")
+
+    with open(VOCAB_PATH, "w") as f:
+        for word, token in vocab.items():
+            f.write(f"{word} {token.count}\n")
+
+    sym_spell.load_dictionary(VOCAB_PATH, term_index=0, count_index=1)
+
+
 def search(ctx: Context) -> None:
     ii, doc_matrix = index_documents(ctx)
+
+    if ctx.spellcheck:
+        generate_vocab(ctx, ii)
 
     metadata: Metadata = get_metadata(ctx)
 

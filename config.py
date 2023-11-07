@@ -16,3 +16,5 @@ PICKLE_DIR: Path = Path("./pickles")
 DICTIONARY_PATH: Final = pkg_resources.resource_filename(
     "symspellpy", "frequency_dictionary_en_82_765.txt"
 )
+
+VOCAB_PATH: Path = Path("./dictionary.txt")
