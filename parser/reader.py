@@ -1,67 +1,136 @@
 import multiprocessing
+from main import Context
 from pathlib import Path
-from parser.parser import parse_contents
-from typing import Union, Dict, List, Tuple
-from parser.parser import DocOccurrences
+from typing import Union, Dict, List, Tuple, Iterable
 import json
-from config import VIDEOGAMES_DIR, PICKLE_FILE
+from config import VIDEOGAMES_DIR, PICKLE_FILE, VIDEOGAME_LABELS
 from parser.parser import (
     merge_word_count_dicts,
     pickle_obj,
     depickle_obj,
     InvertedIndex,
     DocumentMatrix,
+    DocOccurrences,
+    parse_contents,
 )
 import logging
+from functools import wraps
+from time import time
+import csv
+
+
+def timeit(func):
+    @wraps(func)
+    def wrap(*args, **kw):
+        ts = time()
+        result = func(*args, **kw)
+        te = time()
+        print(
+            "func:%r args:[%r, %r] took: %2.4f sec" % (func.__name__, args, kw, te - ts)
+        )
+        return result
+
+    return wrap
 
 
 logger = logging.getLogger(__name__)
 
 
-# need to check if files have changed -> store metadata -> regen and pickle if
-def generate_object() -> Tuple[InvertedIndex, Union[DocumentMatrix, None]]:
+Metadata = Dict
+
+
+def get_metadata(ctx) -> Union[Metadata, None]:
+    if ctx.verbose:
+        logger.info("Loading metadata")
+
     try:
         with open("metadata.json") as f:
             metadata = json.load(f)
-    except Exception:
+            return metadata
+    except json.JSONDecodeError:
+        logger.error("Error decoding metadata")
+    except IOError:
         logger.error("Error loading metadata")
-        metadata = {}
 
-    needs_regen = False
+    return None
+
+
+def needs_reindexing(ctx: Context) -> bool:
+    if ctx.reindex:
+        return True
+
     try:
         last_pickled = PICKLE_FILE.stat().st_mtime
 
         for file in VIDEOGAMES_DIR.iterdir():
             if file.stat().st_mtime > last_pickled:
                 logger.info("Reindexing")
-                needs_regen = True
-                break
-    except Exception:
+                return True
+
+        return False
+
+    except IOError:
         logger.error("Error reading pickle file")
-        needs_regen = True
+        return False
+
+
+# need to check if files have changed -> store metadata -> regen and pickle if
+def index_documents(ctx: Context) -> Tuple[InvertedIndex, Union[DocumentMatrix, None]]:
+    needs_regen = needs_reindexing(ctx)
 
     if not needs_regen:
-        return depickle_obj(), None
+        return depickle_obj(ctx), None
 
-    results = read_dir(VIDEOGAMES_DIR)
-    total_docs = len(results)
+    results = parse_dir(ctx, VIDEOGAMES_DIR)
+
     success = {}
-    metadata = {
-        "total_docs": total_docs,
-    }
 
     # filepath is of type Path, result of type DocOccurrences
     for file_path, result in results.items():
         if not isinstance(result, Exception):
-            success[str(file_path)] = result
-            last_accessed = file_path.stat().st_mtime
-            metadata[str(file_path)] = {
-                "last_modified": last_accessed,
-            }
+            success[file_path] = result
 
         else:
             logger.warning(f"File: {file_path}")
             logger.warning(result)
+
+    metadata = generate_metadata(ctx, list(success.keys()))
+
+    ii, doc_matrix = merge_word_count_dicts(ctx, success, metadata)
+    pickle_obj(ctx, ii)
+    return ii, doc_matrix
+
+
+def generate_metadata(ctx: Context, files: List[Path]) -> Metadata:
+    if ctx.verbose:
+        logger.info("Generating metadata")
+
+    metadata = {
+        "total_docs": len(files),
+        "stripper": ctx.stripper,
+    }
+
+    try:
+        with open(VIDEOGAME_LABELS, "r") as f:
+            reader = csv.DictReader(f)
+
+            metadata.update(
+                {
+                    str(file_path): {
+                        "last_modified": file_path.stat().st_mtime,
+                        "info": line,
+                    }
+                    for line in reader
+                    for file_path in files
+                    if str(line["url"]).replace("ps2.gamespy.com/", "")
+                    == str(file_path)
+                }
+            )
+
+    except IOError:
+        logger.error("Error reading labels")
+    except csv.Error:
+        logger.error("Error parsing csv")
 
     try:
         with open("metadata.json", "w") as f:
@@ -70,15 +139,13 @@ def generate_object() -> Tuple[InvertedIndex, Union[DocumentMatrix, None]]:
         logger.error("Error setting metadata")
         logger.error(e)
 
-    ii, doc_matrix = merge_word_count_dicts(success, total_docs)
-    pickle_obj(ii)
-    return ii, doc_matrix
+    return metadata
 
 
-def parse_and_read(file_path: Path) -> Union[List[DocOccurrences], Exception]:
+def parse_file(ctx: Context, file_path: Path) -> Union[List[DocOccurrences], Exception]:
     try:
         with open(file_path, "rb") as f:
-            results = parse_contents(f)
+            results = parse_contents(ctx, f)
         return results
     except Exception as e:
         # change the exception handling
@@ -86,8 +153,30 @@ def parse_and_read(file_path: Path) -> Union[List[DocOccurrences], Exception]:
         return e
 
 
-# SWITCH TO ASYNCIO
-def read_dir(
+def parse_dir(
+    ctx: Context,
+    directory: Path,
+) -> Dict[Path, Union[List[DocOccurrences], Exception]]:
+    return _parse_dir_mp(ctx, directory) if ctx.mp else _parse_dir_sync(ctx, directory)
+
+
+@timeit
+def _parse_dir_sync(
+    ctx: Context,
+    directory: Path,
+) -> Dict[Path, Union[List[DocOccurrences], Exception]]:
+    try:
+        results = map(lambda file: (file, parse_file(ctx, file)), directory.iterdir())
+
+        return {file_path: result for file_path, result in results}
+    except Exception as e:
+        logger.critical(e)
+        exit(1)
+
+
+@timeit
+def _parse_dir_mp(
+    ctx: Context,
     directory: Path,
 ) -> Dict[Path, Union[List[DocOccurrences], Exception]]:
     logger.debug("Beginning file parsing")
@@ -98,8 +187,11 @@ def read_dir(
 
             for file_path in directory.iterdir():
                 pool.apply_async(
-                    parse_and_read,
-                    (file_path,),
+                    parse_file,
+                    (
+                        ctx,
+                        file_path,
+                    ),
                     callback=lambda res, fp=file_path: results.append((fp, res)),
                 )
 

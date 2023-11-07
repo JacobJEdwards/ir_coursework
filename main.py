@@ -1,8 +1,21 @@
 #!./.direnv/python-3.11/bin/python
-from search.search import search
 import logging
 from config import LOG_LEVEL
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
+from dataclasses import dataclass
+from typing import Literal
+
+
+@dataclass
+class Context:
+    reindex: bool = False
+    stripper: Literal["lemmatize", "stem"] = "lemmatize"
+    mp: bool = True
+    expand: bool = True
+    spellcheck: bool = True
+    weighted: bool = True
+    verbose: bool = False
+
 
 logging.basicConfig(level=LOG_LEVEL)
 logger = logging.getLogger(__name__)
@@ -19,19 +32,65 @@ parser.add_argument(
     default="lemmatize",
     type=str,
     help="Choose whether to lemmatize or stem",
-    nargs=1,
     choices=["lemmatize", "stem"],
     dest="stripper",
 )
 
-parser.add_argument("--regen", "-r", help="Reindex the files")
+parser.add_argument("--regen", "-r", action="store_true", help="Reindex the files")
+
+parser.add_argument(
+    "--sync", "-sy", help="use multiprocessing", action="store_true", dest="sync"
+)
+
+parser.add_argument(
+    "--spellcheck",
+    "-sc",
+    action="store_true",
+    dest="spellcheck",
+    help="Suggest spelling corrections",
+)
+
+parser.add_argument("--expand", "-e", action="store_true", help="Expand query")
+
+parser.add_argument(
+    "--weighted",
+    "-w",
+    action="store_true",
+    dest="weight",
+    help="add weighting for document elements",
+)
+
+parser.add_argument(
+    "--all", "-a", action="store_true", dest="all", help="enable most optimizations"
+)
+
+parser.add_argument(
+    "--verbose", "-v", action="store_true", dest="verbose", help="increase verbosity"
+)
 
 args = parser.parse_args()
 
 
 def main() -> None:
-    logger.info("Starting up...")
-    search()
+    from search.search import search
+
+    if args.all:
+        ctx = Context(stripper=args.stripper, reindex=args.regen, verbose=args.verbose)
+    else:
+        ctx = Context(
+            mp=not args.sync,
+            spellcheck=args.spellcheck,
+            expand=args.expand,
+            weighted=args.weight,
+            stripper=args.stripper,
+            reindex=args.regen,
+            verbose=args.verbose,
+        )
+
+    if ctx.verbose:
+        logger.info("Starting up...")
+        logger.info(ctx)
+    search(ctx)
 
 
 if __name__ == "__main__":

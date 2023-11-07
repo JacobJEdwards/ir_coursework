@@ -1,4 +1,6 @@
 import pickle
+from pathlib import Path
+from main import Context
 
 from bs4 import BeautifulSoup
 from bs4.element import Comment
@@ -6,14 +8,26 @@ from nltk.tokenize import word_tokenize
 from nltk.probability import FreqDist
 from dataclasses import dataclass
 from config import PICKLE_FILE
-from typing import List, Dict, BinaryIO, NoReturn, Union, Tuple
+from typing import (
+    List,
+    Dict,
+    BinaryIO,
+    NoReturn,
+    Union,
+    Tuple,
+    Iterable,
+    assert_never,
+    Callable,
+    Literal,
+)
 import logging
 from search.tf_idf import calculate_tf, calculate_idf, calculate_tf_idf
-from resources import lemmatizer, stop_words, translator
+from resources import lemmatizer, stop_words, translator, stemmer
 from enum import Enum
 from collections import defaultdict
 import numpy as np
 
+Metadata = Dict
 
 logger = logging.getLogger(__name__)
 
@@ -68,11 +82,64 @@ class Token:
 
 
 InvertedIndex = Dict[str, Token]
+StripFunc = Callable[[str], str]
 
 
-# eventually replace with nltk.probabilty.FreqDist
-# add weight as well
-def parse_contents(file: BinaryIO, parser="lxml") -> List[DocOccurrences]:
+def get_word_weight(tag_name: str) -> float:
+    match tag_name:
+        case "h1":
+            weight = Weight.H1.value
+        case "h2":
+            weight = Weight.H2.value
+        case "h3":
+            weight = Weight.H3.value
+        case "h4":
+            weight = Weight.H4.value
+        case "h5":
+            weight = Weight.H5.value
+        case "h6":
+            weight = Weight.H6.value
+        case "p":
+            weight = Weight.P.value
+        case "title":
+            weight = Weight.TITLE.value
+        case "strong":
+            weight = Weight.STRONG.value
+        case "em":
+            weight = Weight.EM.value
+        case "b":
+            weight = Weight.BOLD.value
+        case "i":
+            weight = Weight.ITALIC.value
+        case "meta":
+            weight = Weight.META.value
+        case "a":
+            weight = Weight.A.value
+        case _:
+            weight = 1.0
+
+    return weight
+
+
+def filter_text(strip_func: StripFunc, text: str) -> List[str]:
+    return filter_tokens(strip_func, word_tokenize(text))
+
+
+def filter_tokens(strip_func: StripFunc, tokens: Iterable[str]) -> List[str]:
+    return [strip_func(word) for word in tokens if word not in stop_words]
+
+
+def get_strip_func(strip_type: Literal["lemmatize", "stem"]) -> StripFunc:
+    match strip_type:
+        case "lemmatize":
+            return lemmatizer.lemmatize
+        case "stem":
+            return stemmer.stem
+        case _:
+            assert_never("Unreachable")
+
+
+def parse_contents(ctx: Context, file: BinaryIO, parser="lxml") -> List[DocOccurrences]:
     soup = BeautifulSoup(file.read(), features=parser)
     # remove unneeded info
     comments = soup.find_all(string=lambda element: isinstance(element, Comment))
@@ -81,61 +148,19 @@ def parse_contents(file: BinaryIO, parser="lxml") -> List[DocOccurrences]:
 
     occurrences: List[DocOccurrences] = []
 
-    all_text = soup.get_text().translate(translator)
+    all_text = soup.get_text().translate(translator).lower()
 
-    filtered_all_text = [
-        # stemmer.stem(word.lower())
-        lemmatizer.lemmatize(word.lower())
-        for word in word_tokenize(all_text)
-        if word not in stop_words
-    ]
+    filtered_all_text = filter_text(get_strip_func(ctx.stripper), all_text)
 
     tokens = defaultdict(list[DocToken])
-
     total_words = len(filtered_all_text)
 
     for i, el in enumerate(soup.find_all()):
-        text = el.get_text().translate(translator)
+        text = el.get_text().translate(translator).lower()
 
-        filtered_text = [
-            # stemmer.stem(word.lower())
-            lemmatizer.lemmatize(word.lower())
-            for word in word_tokenize(text)
-            if word not in stop_words
-        ]
+        filtered_text = filter_text(get_strip_func(ctx.stripper), text)
 
-        match el.name:
-            case "h1":
-                weight = Weight.H1.value
-            case "h2":
-                weight = Weight.H2.value
-            case "h3":
-                weight = Weight.H3.value
-            case "h4":
-                weight = Weight.H4.value
-            case "h5":
-                weight = Weight.H5.value
-            case "h6":
-                weight = Weight.H6.value
-            case "p":
-                weight = Weight.P.value
-            case "title":
-                weight = Weight.TITLE.value
-            case "strong":
-                weight = Weight.STRONG.value
-            case "em":
-                weight = Weight.EM.value
-            case "b":
-                weight = Weight.BOLD.value
-            case "i":
-                weight = Weight.ITALIC.value
-            case "meta":
-                weight = Weight.META.value
-            case "a":
-                weight = Weight.A.value
-            case _:
-                weight = 1.0
-
+        weight = get_word_weight(el.name)
         counts: FreqDist = get_count(filtered_text)
 
         for name, count in counts.items():
@@ -150,9 +175,11 @@ def parse_contents(file: BinaryIO, parser="lxml") -> List[DocOccurrences]:
     for word, occur in tokens.items():
         total_weight = 1
         total_count = 0
+        positions = []
         for occ in occur:
             total_weight *= occ.weight
             total_count += occ.count
+            positions.append(occ.position)
 
         tf = calculate_tf(total_words, total_count)
         occurrences.append(
@@ -162,11 +189,9 @@ def parse_contents(file: BinaryIO, parser="lxml") -> List[DocOccurrences]:
                 num_occ=total_count,
                 tf=tf,
                 weight=total_weight,
-                positions=[occ.position for occ in occur],
+                positions=positions,
             )
         )
-
-    logger.debug(occurrences)
 
     return occurrences
 
@@ -176,11 +201,11 @@ def get_count(words: List[str]) -> FreqDist:
 
 
 def merge_word_count_dicts(
-    doc_dict: Dict[str, List[DocOccurrences]], total_docs: int
+    ctx: Context, doc_dict: Dict[Path, List[DocOccurrences]], metadata: Metadata
 ) -> Tuple[InvertedIndex, DocumentMatrix]:
     merged_dict: InvertedIndex = {}
 
-    doc_matrix: DocumentMatrix = np.zeros((total_docs, len(doc_dict)))
+    doc_matrix: DocumentMatrix = np.zeros((metadata["total_docs"], len(doc_dict)))
 
     for name, occurrences in doc_dict.items():
         for occ in occurrences:
@@ -195,7 +220,7 @@ def merge_word_count_dicts(
 
     for word, token in merged_dict.items():
         doc_count = len(token.occurrences)
-        idf = calculate_idf(total_docs, doc_count)
+        idf = calculate_idf(metadata["total_docs"], doc_count)
         token.idf = idf
 
         for i, occ in enumerate(token.occurrences):
@@ -208,7 +233,9 @@ def merge_word_count_dicts(
     return merged_dict, doc_matrix
 
 
-def pickle_obj(data: InvertedIndex) -> Union[None, NoReturn]:
+def pickle_obj(ctx: Context, data: InvertedIndex) -> Union[None, NoReturn]:
+    if ctx.verbose:
+        logger.info("Pickling index")
     try:
         with open(PICKLE_FILE, "wb") as f:
             pickle.dump(data, f)
@@ -218,7 +245,9 @@ def pickle_obj(data: InvertedIndex) -> Union[None, NoReturn]:
         exit(1)
 
 
-def depickle_obj() -> Union[InvertedIndex, NoReturn]:
+def depickle_obj(ctx: Context) -> Union[InvertedIndex, NoReturn]:
+    if ctx.verbose:
+        logger.info("Depickling index")
     try:
         with open(PICKLE_FILE, "rb") as f:
             data = pickle.load(f)

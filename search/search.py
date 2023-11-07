@@ -1,42 +1,42 @@
-from typing import List, Tuple, Dict, Set
+from typing import List, Tuple, Set
 from nltk import word_tokenize
 from nltk.corpus import wordnet
-from parser.reader import generate_object
-from parser.parser import InvertedIndex, DocumentMatrix
-from search.tf_idf import calculate_tf_idf, calculate_tf
-import json
+from parser.parser import InvertedIndex, DocumentMatrix, filter_tokens, get_strip_func
 from collections import defaultdict
-from resources import lemmatizer, stop_words, translator, sym_spell
+from resources import translator, sym_spell
 from symspellpy import Verbosity
 import numpy as np
+from main import Context
+from parser.reader import get_metadata, index_documents, Metadata
+import logging
 
+logger = logging.getLogger(__name__)
 
 SearchResults = List[Tuple[str, float]]
 # TYPE METADATA
 
 
-def get_suggestions(tokens: Set[str]) -> Set[str]:
+def get_suggestions(tokens: Set[str], print_terms: bool = False) -> Set[str]:
     new_tokens = set(tokens)
     for token in tokens:
         suggestions = sym_spell.lookup(
             token, Verbosity.CLOSEST, max_edit_distance=2, include_unknown=True
         )
 
-        if suggestions[0].term == token:
-            new_tokens.add(token)
-            continue
-
-        if suggestions[0].distance == 0:
+        if suggestions[0].term == token or suggestions[0].distance == 0:
             new_tokens.add(suggestions[0].term)
             continue
+
+        if print_terms:
+            logger.info(f"Spell suggestions for {token}:")
+            for sug in suggestions:
+                logger.info(f"{sug.term}")
+
+            print()
 
         for i, suggestion in enumerate(suggestions):
             if i == 3:
                 break
-
-            if suggestion.term == token:
-                new_tokens.add(token)
-                continue
 
             print("Did you mean: ", suggestion.term)
             if input("Y/N: ").lower() == "y":
@@ -48,30 +48,45 @@ def get_suggestions(tokens: Set[str]) -> Set[str]:
     return new_tokens
 
 
-def clean_input(user_input: str) -> Set[str]:
-    tokens = word_tokenize(user_input.translate(translator))
-    return set(
-        [
-            lemmatizer.lemmatize(word.lower())
-            for word in expand_query(get_suggestions(set(tokens)))
-            if word not in stop_words
-        ]
-    )
-
-
-def expand_query(query_terms: Set[str]) -> Set[str]:
+def expand_query(query_terms: Set[str], print_terms: bool = False) -> Set[str]:
     new_terms = set(query_terms)
     for term in query_terms:
         syns = wordnet.synsets(term)
         for syn in syns:
             for lemma in syn.lemmas():
                 new_terms.add(lemma.name())
+
+    if print_terms:
+        logger.info(f"Original terms: {query_terms}\nExpanded terms: {new_terms}\n")
     return new_terms
 
 
-def get_input() -> set[str]:
-    user_input = input("Enter search term(s)")
-    return clean_input(user_input)
+def _clean_tokenized_input(
+    ctx: Context, tokens: Set[str], metadata: Metadata
+) -> Set[str]:
+    if ctx.spellcheck:
+        tokens = get_suggestions(tokens, ctx.verbose)
+
+    if ctx.expand:
+        tokens = expand_query(tokens, ctx.verbose)
+
+    tokens = filter_tokens(get_strip_func(metadata["stripper"]), tokens)
+
+    if ctx.verbose:
+        logger.info(f"Final tokens: {tokens}\n")
+
+    return set(tokens)
+
+
+def clean_input(ctx: Context, user_input: str, metadata: Metadata) -> Set[str]:
+    tokens = word_tokenize(user_input.translate(translator))
+    return _clean_tokenized_input(ctx, tokens, metadata)
+
+
+def get_input(ctx: Context, metadata: Metadata) -> Set[str]:
+    user_input = input("Enter search term(s): ")
+    print()
+    return clean_input(ctx, user_input, metadata)
 
 
 def cosine_similarity(query_vector: np.ndarray, doc_vector: np.ndarray) -> np.ndarray:
@@ -86,46 +101,50 @@ def cosine_similarity(query_vector: np.ndarray, doc_vector: np.ndarray) -> np.nd
 # need to add tf_idf -> think how many need to change implemenation (add metadata etc)
 # @lru_cache(CACHE_SIZE)
 def search_idf(
+    ctx: Context,
     query_terms: Set[str],
     inverted_index: InvertedIndex,
     doc_matrix: DocumentMatrix,
-    metadata: Dict,
+    metadata: Metadata,
 ) -> SearchResults:
     results = defaultdict(float)
-
-    input_tfidf = defaultdict(float)
-    for term in query_terms:
-        input_tfidf[term] += 1
-
-    for term in input_tfidf:
-        input_tfidf[term] = calculate_tf(len(query_terms), int(input_tfidf[term]))
 
     for term in query_terms:
         if term in inverted_index:
             token = inverted_index[term]
 
             for occurrence in token.occurrences:
-                # use doc matrix and cosine similarity
-                input_tfidf[term] = calculate_tf_idf(input_tfidf[term], token.idf)
-                results[occurrence.filename] += occurrence.tfidf * occurrence.weight
+                if ctx.weighted:
+                    results[occurrence.filename] += occurrence.tfidf * occurrence.weight
+                else:
+                    results[occurrence.filename] += occurrence.tfidf
 
     return sorted(results.items(), key=lambda x: x[1], reverse=True)[:10]
 
 
-def search() -> None:
-    ii, doc_matrix = generate_object()
+def search(ctx: Context) -> None:
+    ii, doc_matrix = index_documents(ctx)
 
-    with open("metadata.json", "r") as f:
-        metadata = json.load(f)
+    metadata: Metadata = get_metadata(ctx)
 
     while True:
-        user_input = get_input()
+        user_input = get_input(ctx, metadata)
 
-        results: SearchResults = search_idf(user_input, ii, doc_matrix, metadata)
+        results: SearchResults = search_idf(ctx, user_input, ii, doc_matrix, metadata)
 
         if len(results) == 0:
             print("No results found")
             continue
 
-        for doc, score in results:
-            print(f"Document: {doc}, Score: {score}")
+        for i, (doc, score) in enumerate(results):
+            print(f"{int(i)+1}:")
+            if doc in metadata:
+                info: dict = metadata[doc]["info"]
+                for key, val in info.items():
+                    print(f"{key}: {val}")
+
+                print(f"Score: {score}")
+            else:
+                print(f"Document: {doc}, Score: {score}")
+
+            print()
