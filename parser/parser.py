@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 from bs4.element import Comment
 from nltk.tokenize import word_tokenize
 from nltk.probability import FreqDist
-from config import PICKLE_FILE
+from config import PICKLE_FILE, PICKLE_DIR
 from typing import (
     BinaryIO,
     NoReturn,
@@ -199,12 +199,18 @@ def merge_word_count_dicts(
     return merged_dict, doc_matrix
 
 
+def get_pickle_name(stripper: Literal["lemmatize", "stem"]) -> Path:
+    PICKLE_DIR.mkdir(exist_ok=True)
+    return PICKLE_DIR / f"{stripper}.pkl"
+
+
 # TODO: pickle multiples files based on ctx
 def pickle_obj(ctx: Context, data: InvertedIndex) -> None | NoReturn:
     if ctx.verbose:
         logger.info("Pickling index")
+
     try:
-        with open(PICKLE_FILE, "wb") as f:
+        with open(get_pickle_name(ctx.stripper), "wb") as f:
             pickle.dump(data, f)
             return
     except Exception as e:
@@ -216,7 +222,7 @@ def depickle_obj(ctx: Context) -> InvertedIndex | NoReturn:
     if ctx.verbose:
         logger.info("Depickling index")
     try:
-        with open(PICKLE_FILE, "rb") as f:
+        with open(get_pickle_name(ctx.stripper), "rb") as f:
             data = pickle.load(f)
             return data
     except Exception as e:

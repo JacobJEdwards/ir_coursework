@@ -93,8 +93,6 @@ def main() -> None:
             verbose=args.verbose,
         )
 
-    print(hash(ctx.parser_type))
-
     if ctx.verbose:
         logger.info("Starting up...")
         logger.info(ctx)

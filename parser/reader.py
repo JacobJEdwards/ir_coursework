@@ -4,12 +4,13 @@ from typing import assert_never
 from main import Context
 from pathlib import Path
 import json
-from config import VIDEOGAMES_DIR, PICKLE_FILE, VIDEOGAME_LABELS
+from config import VIDEOGAMES_DIR, VIDEOGAME_LABELS
 from parser.parser import (
     merge_word_count_dicts,
     pickle_obj,
     depickle_obj,
     parse_contents,
+    get_pickle_name,
 )
 from parser.types import InvertedIndex, DocumentMatrix, Metadata, DocOccurrences
 import logging
@@ -59,8 +60,13 @@ def needs_reindexing(ctx: Context) -> bool:
     if ctx.reindex:
         return True
 
+    pickle_name: Path = get_pickle_name(ctx.stripper)
+
+    if not pickle_name.exists():
+        return True
+
     try:
-        last_pickled = PICKLE_FILE.stat().st_mtime
+        last_pickled = get_pickle_name(ctx.stripper).stat().st_mtime
 
         for file in VIDEOGAMES_DIR.iterdir():
             if file.stat().st_mtime > last_pickled:
@@ -71,7 +77,7 @@ def needs_reindexing(ctx: Context) -> bool:
 
     except IOError:
         logger.error("Error reading pickle file")
-        return False
+        return True
 
 
 # need to check if files have changed -> store metadata -> regen and pickle if
