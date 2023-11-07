@@ -7,3 +7,4 @@
 - create new types or extned current types is the answer
 - find formula to use tf*idf with weighting
 - precalculate tfidf
+- use typing.typeddict to type metadata
