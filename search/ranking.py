@@ -9,7 +9,7 @@ def calculate_tf_idf(tf: float, idf: float) -> float:
 
 
 @lru_cache(maxsize=CACHE_SIZE)
-def calculate_bm25_plus(
+def _calculate_bm25_plus(
     tf: float,
     idf: float,
     doc_length: int,
@@ -21,7 +21,7 @@ def calculate_bm25_plus(
     k2: float = 1000,
 ) -> float:
     # Calculate the standard BM25 score
-    bm25_score = calculate_bm25(tf, idf, doc_length, avg_dl, k1=k1, b=b)
+    bm25_score = calculate_bm25(tf, idf, doc_length, avg_dl, k1=k1, b=b, plus=False)
 
     # Calculate the BM25+ additional term
     additional_term = alpha * (tf_query * (k2 + 1)) / (tf_query + k2) * idf
@@ -43,7 +43,7 @@ def calculate_bm25(
     b: float = 0.75,
 ) -> float:
     return (
-        calculate_bm25_plus(tf, idf, doc_length, avg_dl, k1, b)
+        _calculate_bm25_plus(tf, idf, doc_length, avg_dl, k1, b)
         if plus
         else (tf * (k1 + 1) / (tf + k1 * (1 - b + b * doc_length / avg_dl))) * idf
     )

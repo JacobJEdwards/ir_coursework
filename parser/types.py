@@ -1,4 +1,4 @@
-from typing import TypedDict, Callable, Literal, NamedTuple
+from typing import TypedDict, Callable, Literal, Mapping
 from pathlib import Path
 import numpy as np
 from dataclasses import dataclass
@@ -14,7 +14,7 @@ class FileMetadata(TypedDict):
 class Metadata(TypedDict):
     stripper: Literal["lemmatize", "stem"]
     total_docs: int
-    files: dict[str, FileMetadata]
+    files: Mapping[str, FileMetadata]
     average_wc: float
 
 
@@ -57,13 +57,19 @@ InvertedIndex = dict[str, Token]
 StripFunc = Callable[[str], str]
 
 
+# could use class to emcapuslate parsing together documents, or genreating dm
+class II(dict):
+    def __init__(self, *args, **kwargs):
+        dict.__init__(self, *args, **kwargs)
+
+
 class FileParseSuccess(TypedDict):
     result: list[DocOccurrences]
     word_count: int
 
 
 ParsedFile = FileParseSuccess | Exception
-ParsedDir = dict[Path, ParsedFile]
-ParsedDirSuccess = dict[Path, FileParseSuccess]
+ParsedDir = Mapping[Path, ParsedFile]
+ParsedDirSuccess = Mapping[Path, FileParseSuccess]
 
-ParsedDirResults = dict[Path, list[DocOccurrences]]
+ParsedDirResults = Mapping[Path, list[DocOccurrences]]

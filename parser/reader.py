@@ -1,6 +1,9 @@
 import multiprocessing
 import concurrent.futures
 from typing import assert_never
+
+import numpy as np
+
 from main import Context
 from pathlib import Path
 import json
@@ -11,6 +14,7 @@ from parser.parser import (
     depickle_obj,
     parse_contents,
     get_pickle_name,
+    generate_document_matrix,
 )
 from parser.types import (
     InvertedIndex,
@@ -70,13 +74,18 @@ def needs_reindexing(ctx: Context) -> bool:
         return True
 
 
-# need to check if files have changed -> store metadata -> regen and pickle if
 @timeit
-def index_documents(ctx: Context) -> tuple[InvertedIndex, DocumentMatrix | None]:
+def index_documents(
+    ctx: Context,
+) -> tuple[InvertedIndex, dict[str, np.ndarray], list[str]]:
     needs_regen = needs_reindexing(ctx)
 
     if not needs_regen:
-        return depickle_obj(ctx), None
+        metadata = get_metadata(ctx)
+        ii = depickle_obj(ctx)
+        vec_space, doc_vectors = generate_document_matrix(ctx, ii, metadata)
+
+        return ii, doc_vectors, vec_space
 
     results = parse_dir(ctx, VIDEOGAMES_DIR)
 
@@ -96,9 +105,11 @@ def index_documents(ctx: Context) -> tuple[InvertedIndex, DocumentMatrix | None]
         path: val["result"] for path, val in success.items()
     }
 
-    ii, doc_matrix = merge_word_count_dicts(ctx, result_dict, metadata)
+    ii = merge_word_count_dicts(ctx, result_dict, metadata)
+    vec_space, doc_vecs = generate_document_matrix(ctx, ii, metadata)
+
     pickle_obj(ctx, ii)
-    return ii, doc_matrix
+    return ii, doc_vecs, vec_space
 
 
 def get_average_wc(metadata: Metadata) -> float:

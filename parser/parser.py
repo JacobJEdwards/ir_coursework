@@ -1,6 +1,7 @@
 import pickle
 from pathlib import Path
 from main import Context
+from search.types import QueryTerm
 
 from bs4 import BeautifulSoup
 from bs4.element import Comment
@@ -10,7 +11,7 @@ from config import PICKLE_DIR
 from typing import (
     BinaryIO,
     NoReturn,
-    Iterable,
+    Sequence,
     assert_never,
     Literal,
 )
@@ -23,7 +24,6 @@ import numpy as np
 from parser.types import (
     InvertedIndex,
     StripFunc,
-    DocumentMatrix,
     DocOccurrences,
     DocToken,
     Metadata,
@@ -90,11 +90,21 @@ class Weight(Enum):
 
 
 def filter_text(strip_func: StripFunc, text: str) -> list[str]:
-    return filter_tokens(strip_func, word_tokenize(text))
+    return filter_tokens(strip_func, word_tokenize(clean_text(text)))
 
 
-def filter_tokens(strip_func: StripFunc, tokens: Iterable[str]) -> list[str]:
-    return [strip_func(word) for word in tokens if word not in stop_words]
+def filter_tokens(
+    strip_func: StripFunc, tokens: Sequence[str | QueryTerm], query=False
+) -> list[str | QueryTerm]:
+    return (
+        [strip_func(word) for word in tokens if word not in stop_words]
+        if not query
+        else [
+            QueryTerm(term=strip_func(word.term), weight=word.weight)
+            for word in tokens
+            if word not in stop_words
+        ]
+    )
 
 
 def get_strip_func(strip_type: Literal["lemmatize", "stem"]) -> StripFunc:
@@ -107,6 +117,10 @@ def get_strip_func(strip_type: Literal["lemmatize", "stem"]) -> StripFunc:
             assert_never("Unreachable")
 
 
+def clean_text(text: str) -> str:
+    return text.replace("-", " ").translate(translator).lower()
+
+
 def parse_contents(ctx: Context, file: BinaryIO, parser="lxml") -> FileParseSuccess:
     soup = BeautifulSoup(file.read(), features=parser)
     # remove unneeded info
@@ -116,17 +130,13 @@ def parse_contents(ctx: Context, file: BinaryIO, parser="lxml") -> FileParseSucc
 
     occurrences: list[DocOccurrences] = []
 
-    all_text = soup.get_text().translate(translator).lower()
-
-    filtered_all_text = filter_text(get_strip_func(ctx.stripper), all_text)
+    filtered_all_text = filter_text(get_strip_func(ctx.stripper), soup.get_text())
 
     tokens = defaultdict(list[DocToken])
     total_words = len(filtered_all_text)
 
     for i, el in enumerate(soup.find_all()):
-        text = el.get_text().translate(translator).lower()
-
-        filtered_text = filter_text(get_strip_func(ctx.stripper), text)
+        filtered_text = filter_text(get_strip_func(ctx.stripper), el.get_text())
 
         weight = Weight.get_word_weight(el.name)
         counts: FreqDist = get_count(filtered_text)
@@ -168,25 +178,8 @@ def get_count(words: list[str]) -> FreqDist:
     return FreqDist(words)
 
 
-def merge_word_count_dicts(
-    ctx: Context, doc_dict: ParsedDirResults, metadata: Metadata
-) -> tuple[InvertedIndex, DocumentMatrix]:
-    merged_dict: InvertedIndex = {}
-
-    doc_matrix: DocumentMatrix = np.zeros((metadata["total_docs"], len(doc_dict)))
-
-    for name, occurrences in doc_dict.items():
-        for occ in occurrences:
-            if occ.word in merged_dict:
-                merged_dict[occ.word].count += occ.num_occ
-                merged_dict[occ.word].occurrences.append(occ)
-                merged_dict[occ.word].positions.extend([occ.positions])
-            else:
-                merged_dict[occ.word] = Token(
-                    occ.word, occ.num_occ, 0, 0, [occ], [occ.positions]
-                )
-
-    for word, token in merged_dict.items():
+def set_weightings_ii(ctx: Context, ii: InvertedIndex, metadata: Metadata) -> None:
+    for word, token in ii.items():
         doc_count = len(token.occurrences)
 
         idf = calculate_idf(metadata["total_docs"], doc_count)
@@ -203,17 +196,74 @@ def merge_word_count_dicts(
                 occ.tf, bm25_idf, doc_wc, metadata["average_wc"], plus=False
             )
             bm25_plus = calculate_bm25(
-                occ.tf, bm25_idf, doc_wc, metadata["average_wc"], plus=False
+                occ.tf, bm25_idf, doc_wc, metadata["average_wc"], plus=True
             )
             occ.tfidf = tf_idf
             occ.bm25 = bm25
             occ.bm25_plus = bm25_plus
-            doc_matrix[i][occ.positions] = tf_idf
+
+    if ctx.verbose:
+        logger.info("Set term weights")
+
+
+def merge_word_count_dicts(
+    ctx: Context, doc_dict: ParsedDirResults, metadata: Metadata
+) -> InvertedIndex:
+    ii: InvertedIndex = {}
+
+    for name, occurrences in doc_dict.items():
+        for occ in occurrences:
+            if occ.word in ii:
+                ii[occ.word].count += occ.num_occ
+                ii[occ.word].occurrences.append(occ)
+                ii[occ.word].positions.extend([occ.positions])
+            else:
+                ii[occ.word] = Token(
+                    occ.word, occ.num_occ, 0, 0, [occ], [occ.positions]
+                )
+
+    set_weightings_ii(ctx, ii, metadata)
 
     if ctx.verbose:
         logger.info("Generated inverted index")
 
-    return merged_dict, doc_matrix
+    return ii
+
+
+def generate_document_matrix(
+    ctx: Context, ii: InvertedIndex, metadata: Metadata
+) -> tuple[list[str], dict[str, np.ndarray]]:
+    if ctx.verbose:
+        logger.info("Generating document matrix")
+
+    vector_space = list(ii.keys())
+
+    # maybe below would be better ?
+    # matrix = np.zeros([len(ii.keys()), len(metadata["files"])])
+
+    doc_dict = {}
+
+    for i, term in enumerate(vector_space):
+        for occ in ii[term].occurrences:
+            if occ.filename not in doc_dict:
+                doc_dict[occ.filename] = np.zeros(len(vector_space))
+
+            match ctx.scorer:
+                case "tfidf":
+                    score = occ.tfidf
+                case "bm25":
+                    score = occ.bm25
+                case "bm25+":
+                    score = occ.bm25_plus
+                case _:
+                    assert_never("Unreachable")
+
+            if ctx.weighted:
+                score = score * occ.weight
+
+            doc_dict[occ.filename][i] = score
+
+    return vector_space, doc_dict
 
 
 def get_pickle_name(stripper: Literal["lemmatize", "stem"]) -> Path:

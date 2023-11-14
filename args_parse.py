@@ -64,3 +64,13 @@ parser.add_argument(
     default="bm25+",
     dest="scorer",
 )
+
+parser.add_argument(
+    "--searcher",
+    "-se",
+    help="Choose whether to use a normal scoring algorithm or a vector space",
+    type=str,
+    choices=["vector", "score"],
+    default="vector",
+    dest="searcher",
+)

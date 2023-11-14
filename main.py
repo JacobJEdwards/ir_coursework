@@ -12,6 +12,7 @@ class Context:
     stripper: Literal["lemmatize", "stem"] = "lemmatize"
     parser_type: Literal["async", "mp", "sync"] = "async"
     scorer: Literal["tfidf", "bm25", "bm25+"] = "bm25+"
+    searcher: Literal["vector", "score"] = "vector"
     expand: bool = True
     spellcheck: bool = True
     weighted: bool = True
@@ -29,6 +30,7 @@ def generate_context(args) -> Context:
             reindex=args.regen,
             verbose=args.verbose,
             scorer=args.scorer,
+            searcher=args.searcher,
         )
 
     return Context(
@@ -40,6 +42,7 @@ def generate_context(args) -> Context:
         reindex=args.regen,
         verbose=args.verbose,
         scorer=args.scorer,
+        searcher=args.searcher,
     )
 
 
