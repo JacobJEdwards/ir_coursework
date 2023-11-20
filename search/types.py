@@ -1,7 +1,7 @@
 from typing import NamedTuple
 
 SearchResult = tuple[str, float]
-SearchResults = set[SearchResult]
+SearchResults = list[SearchResult]
 
 
 class QueryTerm(NamedTuple):

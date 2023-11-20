@@ -1,4 +1,5 @@
 ###### IHAVE BROKEN SOMETHING
+from pprint import pprint
 
 from typing import assert_never, Sequence
 from nltk.corpus import wordnet
@@ -18,6 +19,7 @@ from config import VOCAB_PATH
 logger = logging.getLogger(__name__)
 
 
+# https://symspellpy.readthedocs.io
 def get_suggestions(
     tokens: Sequence[QueryTerm], print_terms: bool = False
 ) -> list[QueryTerm]:
@@ -57,7 +59,7 @@ def expand_query(
     query_terms: Sequence[QueryTerm], print_terms: bool = False
 ) -> list[QueryTerm]:
     new_terms = list(query_terms)
-    for query_term in query_terms:
+    for query_term in set(query_terms):
         syns = wordnet.synsets(query_term.term)
         for syn in syns:
             for lemma in syn.lemmas():
@@ -86,9 +88,7 @@ def _clean_tokenized_input(
     return tokens
 
 
-def clean_input(
-    ctx: Context, user_input: str, metadata: Metadata
-) -> Sequence[QueryTerm]:
+def clean_input(ctx: Context, user_input: str, metadata: Metadata) -> list[QueryTerm]:
     # simple cleaner - prevent spell errors on stopwords (not in dictionary)
     tokens = [
         QueryTerm(term=term, weight=1) for term in filter_text(lambda x: x, user_input)
@@ -113,8 +113,8 @@ def calculate_dot(vec1: np.ndarray, vec2: np.ndarray) -> int:
 
 # DO NOT USE NP.DOT -> do this manually
 def cosine_similarity(query_vector: np.ndarray, doc_vector: np.ndarray) -> float:
-    dot_product = np.dot(query_vector, doc_vector.T)
-    # dot_product = calculate_dot(query_vector, doc_vector.T)
+    # dot_product = np.dot(query_vector, doc_vector.T)
+    dot_product = calculate_dot(query_vector, doc_vector.T)
 
     query_norm = np.linalg.norm(query_vector)
     doc_norm = np.linalg.norm(doc_vector)
@@ -124,16 +124,18 @@ def cosine_similarity(query_vector: np.ndarray, doc_vector: np.ndarray) -> float
 
 def vectorise_query(
     ctx: Context,
-    query_terms: Sequence[str],
+    query_terms: Sequence[QueryTerm],
     vec_space: Sequence[str],
     ii: InvertedIndex,
     metadata: Metadata,
 ) -> np.ndarray:
     query_vector = np.zeros(len(vec_space))
 
+    terms = [query.term for query in query_terms]
+    # this is the problem
     for i, term in enumerate(vec_space):
-        if term in query_terms:
-            term_count = query_terms.count(term)
+        if term in terms:
+            term_count = terms.count(term)
             tf = calculate_tf(len(query_terms), term_count)
 
             match ctx.scorer:
@@ -153,6 +155,9 @@ def vectorise_query(
                 case _:
                     assert_never("Unreachable")
 
+            # if ctx.weighted:
+            # score = score * term.weight
+
             query_vector[i] = score
 
     return query_vector
@@ -166,14 +171,13 @@ def search_vecs(
     ii: InvertedIndex,
     metadata: Metadata,
 ) -> SearchResults:
-    _query_terms = [term.term for term in query_terms]
-    query_vec = vectorise_query(ctx, _query_terms, vec_space, ii, metadata)
+    query_vec = vectorise_query(ctx, query_terms, vec_space, ii, metadata)
     results = defaultdict(float)
 
     for doc, vec in doc_vecs.items():
         results[doc] = cosine_similarity(query_vec, vec)
 
-    return set(sorted(results.items(), key=lambda x: x[1], reverse=True)[:10])
+    return list(sorted(results.items(), key=lambda x: x[1], reverse=True)[:10])
 
 
 def search_idf(
@@ -206,7 +210,7 @@ def search_idf(
                 else:
                     results[occurrence.filename] += score
 
-    return set(sorted(results.items(), key=lambda x: x[1], reverse=True)[:10])
+    return list(sorted(results.items(), key=lambda x: x[1], reverse=True)[:10])
 
 
 def print_result(ctx: Context, result: SearchResult, metadata: Metadata) -> None:
