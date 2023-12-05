@@ -1,5 +1,8 @@
 import pickle
 from pathlib import Path
+
+import nltk
+
 from main import Context
 from search.types import QueryTerm
 
@@ -8,17 +11,10 @@ from bs4.element import Comment
 from nltk.tokenize import word_tokenize
 from nltk.probability import FreqDist
 from config import PICKLE_DIR
-from typing import (
-    BinaryIO,
-    NoReturn,
-    Sequence,
-    assert_never,
-    Literal,
-)
+from typing import BinaryIO, NoReturn, Sequence, assert_never, Literal
 import logging
 from search.ranking import calculate_tf, calculate_idf, calculate_tf_idf, calculate_bm25
 from resources import lemmatizer, stop_words, translator, stemmer
-from enum import Enum
 from collections import defaultdict
 import numpy as np
 from parser.types import (
@@ -30,63 +26,13 @@ from parser.types import (
     Token,
     FileParseSuccess,
     ParsedDirResults,
+    Entity,
+    Weight,
+    DocEntity,
 )
 
 
 logger = logging.getLogger(__name__)
-
-
-class Weight(Enum):
-    H1 = 1.5
-    H2 = 1.4
-    H3 = 1.3
-    H4 = 1.2
-    H5 = 1.1
-    H6 = 1.0
-    P = 1.0
-    TITLE = 1.6
-    BOLD = 1.2
-    ITALIC = 1.1
-    STRONG = 1.2
-    EM = 1.1
-    A = 1.0
-    META = 1.2
-
-    @classmethod
-    def get_word_weight(cls, tag_name: str) -> float:
-        match tag_name:
-            case "h1":
-                weight = cls.H1.value
-            case "h2":
-                weight = cls.H2.value
-            case "h3":
-                weight = cls.H3.value
-            case "h4":
-                weight = cls.H4.value
-            case "h5":
-                weight = cls.H5.value
-            case "h6":
-                weight = cls.H6.value
-            case "p":
-                weight = cls.P.value
-            case "title":
-                weight = cls.TITLE.value
-            case "strong":
-                weight = cls.STRONG.value
-            case "em":
-                weight = cls.EM.value
-            case "b":
-                weight = cls.BOLD.value
-            case "i":
-                weight = cls.ITALIC.value
-            case "meta":
-                weight = cls.META.value
-            case "a":
-                weight = cls.A.value
-            case _:
-                weight = 1.0
-
-        return weight
 
 
 def filter_text(strip_func: StripFunc, text: str) -> list[str]:
@@ -94,15 +40,22 @@ def filter_text(strip_func: StripFunc, text: str) -> list[str]:
 
 
 def filter_tokens(
-    strip_func: StripFunc, tokens: Sequence[str | QueryTerm], query=False
+    strip_func: StripFunc,
+    tokens: Sequence[str | QueryTerm],
+    query: bool = False,
+    remove_stopwords: bool = True,
 ) -> list[str | QueryTerm]:
     return (
-        [strip_func(word) for word in tokens if word not in stop_words]
+        [
+            strip_func(word)
+            for word in tokens
+            if not remove_stopwords or word not in stop_words
+        ]
         if not query
         else [
             QueryTerm(term=strip_func(word.term), weight=word.weight)
             for word in tokens
-            if word not in stop_words
+            if not remove_stopwords or word not in stop_words
         ]
     )
 
@@ -121,7 +74,9 @@ def clean_text(text: str) -> str:
     return text.replace("-", " ").translate(translator).lower()
 
 
-def parse_contents(ctx: Context, file: BinaryIO, parser="lxml") -> FileParseSuccess:
+def parse_contents(
+    ctx: Context, file: BinaryIO, parser: str = "lxml"
+) -> FileParseSuccess:
     soup = BeautifulSoup(file.read(), features=parser)
     # remove unneeded info
     comments = soup.find_all(string=lambda element: isinstance(element, Comment))
@@ -133,10 +88,23 @@ def parse_contents(ctx: Context, file: BinaryIO, parser="lxml") -> FileParseSucc
     filtered_all_text = filter_text(get_strip_func(ctx.stripper), soup.get_text())
 
     tokens = defaultdict(list[DocToken])
+    entities: list[DocEntity] = []
     total_words = len(filtered_all_text)
 
     for i, el in enumerate(soup.find_all()):
         filtered_text = filter_text(get_strip_func(ctx.stripper), el.get_text())
+
+        for j, sent in enumerate(nltk.sent_tokenize(el.get_text())):
+            for chunk in nltk.ne_chunk(nltk.pos_tag(nltk.word_tokenize(sent))):
+                if hasattr(chunk, "label"):
+                    entities.append(
+                        DocEntity(
+                            " ".join(c[0] for c in chunk).lower(),
+                            file.name,
+                            Entity.get_entity(chunk.label()),
+                            j,
+                        )
+                    )
 
         weight = Weight.get_word_weight(el.name)
         counts: FreqDist = get_count(filtered_text)
@@ -171,7 +139,7 @@ def parse_contents(ctx: Context, file: BinaryIO, parser="lxml") -> FileParseSucc
             )
         )
 
-    return {"result": occurrences, "word_count": total_words}
+    return {"tokens": occurrences, "entities": entities, "word_count": total_words}
 
 
 def get_count(words: list[str]) -> FreqDist:

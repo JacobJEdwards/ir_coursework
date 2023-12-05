@@ -74,3 +74,10 @@ parser.add_argument(
     default="vector",
     dest="searcher",
 )
+
+parser.add_argument(
+    "--stopwords",
+    action="store_true",
+    dest="stopwords",
+    help="disable removal of stopwords",
+)

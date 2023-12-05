@@ -17,6 +17,7 @@ class Context:
     spellcheck: bool = True
     weighted: bool = True
     verbose: bool = False
+    stopwords: bool = False
 
 
 logging.basicConfig(level=LOG_LEVEL)
@@ -31,6 +32,7 @@ def generate_context(args) -> Context:
             verbose=args.verbose,
             scorer=args.scorer,
             searcher=args.searcher,
+            stopwords=args.stopwords,
         )
 
     return Context(
@@ -43,6 +45,7 @@ def generate_context(args) -> Context:
         verbose=args.verbose,
         scorer=args.scorer,
         searcher=args.searcher,
+        stopwords=args.stopwords,
     )
 
 

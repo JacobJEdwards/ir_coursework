@@ -1,11 +1,15 @@
 ###### IHAVE BROKEN SOMETHING
-from pprint import pprint
 
 from typing import assert_never, Sequence
 from nltk.corpus import wordnet
 from parser.parser import filter_tokens, get_strip_func, filter_text
 from parser.types import InvertedIndex, Metadata
-from search.ranking import calculate_tf, calculate_bm25, calculate_tf_idf
+from search.ranking import (
+    calculate_tf,
+    calculate_bm25,
+    calculate_tf_idf,
+    cosine_similarity,
+)
 from collections import defaultdict
 from resources import sym_spell
 from symspellpy import Verbosity
@@ -15,12 +19,13 @@ from parser.reader import get_metadata, index_documents
 import logging
 from search.types import SearchResults, SearchResult, QueryTerm
 from config import VOCAB_PATH
+from utils import timeit
 
 logger = logging.getLogger(__name__)
 
 
 # https://symspellpy.readthedocs.io
-def get_suggestions(
+def get_suggestions_external(
     tokens: Sequence[QueryTerm], print_terms: bool = False
 ) -> list[QueryTerm]:
     new_tokens = list(tokens)
@@ -42,14 +47,105 @@ def get_suggestions(
 
         for i, suggestion in enumerate(suggestions):
             if i == 3:
+                new_tokens.append(token)
                 break
 
             print("Did you mean: ", suggestion.term)
             if input("Y/N: ").lower() == "y":
                 new_tokens.append(QueryTerm(term=suggestion.term, weight=token.weight))
                 break
-            else:
-                new_tokens.append(token)
+        else:
+            new_tokens.append(token)
+
+    return new_tokens
+
+
+# out of range error !!!!!!!!!!!
+# TODO: fix
+def l_distance_iter(a: str, b: str) -> int:
+    len_a = len(a)
+    len_b = len(b)
+
+    if abs(len_a > len_b):
+        return abs(len_a - len_b)
+
+    # ensure a is the shorter string
+    if len_a > len_b:
+        a, b = b, a
+        len_a, len_b = len_b, len_a
+
+    d = [[0 for _ in range(len_b + 1)] for _ in range(len_a + 1)]
+
+    for i in range(len_a + 1):
+        d[i][0] = i
+
+    for i in range(len_b + 1):
+        d[0][i] = i
+
+    for j in range(1, len_a + 1):
+        for i in range(1, len_b + 1):
+            cost = 0 if a[i - 1] == b[j - 1] else 1
+
+            d[i][j] = min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost)
+
+    return d[len_a][len_b]
+
+
+def l_distance_rec(a: str, b: str) -> int:
+    memo = {}
+
+    def helper(i, j):
+        if (i, j) in memo:
+            return memo[(i, j)]
+
+        if i == 0:
+            memo[(i, j)] = j
+        elif j == 0:
+            memo[(i, j)] = i
+        elif a[i - 1] == b[j - 1]:
+            memo[(i, j)] = helper(i - 1, j - 1)
+        else:
+            memo[(i, j)] = 1 + min(
+                helper(i, j - 1),  # Insertion
+                helper(i - 1, j),  # Deletion
+                helper(i - 1, j - 1),  # Substitution
+            )
+
+        return memo[(i, j)]
+
+    return helper(len(a), len(b))
+
+
+def load_words() -> set[str]:
+    words = set()
+    with open(VOCAB_PATH, "r") as f:
+        for line in f:
+            words.add(line.split(" ")[0])
+
+    return words
+
+
+def get_suggestions_internal(
+    tokens: Sequence[QueryTerm], print_terms: bool = False
+) -> list[QueryTerm]:
+    vocab = load_words()
+    new_tokens = []
+    for token in tokens:
+        distances = {word: l_distance_iter(token.term, word) for word in vocab}
+
+        top_3: list[tuple[str, int]] = sorted(distances.items(), key=lambda x: x[1])[:3]
+
+        if top_3[0][1] == 0:
+            new_tokens.append(token)
+            continue
+
+        for suggestion in top_3:
+            print("Did you mean: ", suggestion)
+            if input("Y/N: ").lower() == "y":
+                new_tokens.append(QueryTerm(term=suggestion[0], weight=token.weight))
+                break
+        else:  # only executed if not broken
+            new_tokens.append(token)
 
     return new_tokens
 
@@ -75,7 +171,7 @@ def _clean_tokenized_input(
     ctx: Context, tokens: Sequence[QueryTerm], metadata: Metadata
 ) -> list[QueryTerm]:
     if ctx.spellcheck:
-        tokens = get_suggestions(tokens, ctx.verbose)
+        tokens = get_suggestions_internal(tokens, ctx.verbose)
 
     if ctx.expand:
         tokens = expand_query(tokens, ctx.verbose)
@@ -97,29 +193,10 @@ def clean_input(ctx: Context, user_input: str, metadata: Metadata) -> list[Query
     return _clean_tokenized_input(ctx, tokens, metadata)
 
 
-def get_input(ctx: Context, metadata: Metadata) -> Sequence[QueryTerm]:
+def get_input(ctx: Context, metadata: Metadata) -> list[QueryTerm]:
     user_input = input("Enter search term(s): ")
     print()
     return clean_input(ctx, user_input, metadata)
-
-
-def calculate_dot(vec1: np.ndarray, vec2: np.ndarray) -> int:
-    total = 0
-    for a, b in zip(vec1, vec2):
-        total += a * b
-
-    return total
-
-
-# DO NOT USE NP.DOT -> do this manually
-def cosine_similarity(query_vector: np.ndarray, doc_vector: np.ndarray) -> float:
-    # dot_product = np.dot(query_vector, doc_vector.T)
-    dot_product = calculate_dot(query_vector, doc_vector.T)
-
-    query_norm = np.linalg.norm(query_vector)
-    doc_norm = np.linalg.norm(doc_vector)
-
-    return dot_product / (query_norm * doc_norm)
 
 
 def vectorise_query(
@@ -163,6 +240,7 @@ def vectorise_query(
     return query_vector
 
 
+@timeit
 def search_vecs(
     ctx: Context,
     query_terms: Sequence[QueryTerm],
@@ -180,6 +258,7 @@ def search_vecs(
     return list(sorted(results.items(), key=lambda x: x[1], reverse=True)[:10])
 
 
+@timeit
 def search_idf(
     ctx: Context,
     query_terms: set[QueryTerm],
@@ -188,9 +267,9 @@ def search_idf(
 ) -> SearchResults:
     results = defaultdict(float)
 
-    for term in query_terms:
-        if term.term in inverted_index:
-            token = inverted_index[term.term]
+    for query in query_terms:
+        if query.term in inverted_index:
+            token = inverted_index[query.term]
 
             for occurrence in token.occurrences:
                 match ctx.scorer:
@@ -205,7 +284,7 @@ def search_idf(
 
                 if ctx.weighted:
                     results[occurrence.filename] += (
-                        score * occurrence.weight * term.weight
+                        score * occurrence.weight * query.weight
                     )
                 else:
                     results[occurrence.filename] += score
@@ -254,7 +333,6 @@ def generate_vocab(ctx: Context, vocab: InvertedIndex) -> None:
 
 def search(ctx: Context) -> None:
     # imported to allow backspacing in input
-    import readline  # ruff: noqa
 
     ii, doc_vectors, vec_space = index_documents(ctx)
 

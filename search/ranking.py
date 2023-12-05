@@ -1,6 +1,7 @@
 import math
 from functools import lru_cache
 from config import CACHE_SIZE
+import numpy as np
 
 
 @lru_cache(maxsize=CACHE_SIZE)
@@ -65,3 +66,23 @@ def calculate_tf(
     word_count: int,
 ) -> float:
     return word_count / total_words
+
+
+def calculate_dot(vec1: np.ndarray, vec2: np.ndarray) -> int:
+    return sum([a * b for a, b in zip(vec1, vec2)])
+
+
+def calculate_vector_norm(vec: np.ndarray) -> float:
+    return math.sqrt(sum([x * x for x in vec]))
+
+
+# DO NOT USE NP.DOT -> do this manually
+def cosine_similarity(query_vector: np.ndarray, doc_vector: np.ndarray) -> float:
+    dot_product = calculate_dot(query_vector, doc_vector.T)
+
+    # query_norm = np.linalg.norm(query_vector)
+    # doc_norm = np.linalg.norm(doc_vector)
+    query_norm = calculate_vector_norm(query_vector)
+    doc_norm = calculate_vector_norm(doc_vector)
+
+    return dot_product / (query_norm * doc_norm)

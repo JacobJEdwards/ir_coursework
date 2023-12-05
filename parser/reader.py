@@ -18,7 +18,6 @@ from parser.parser import (
 )
 from parser.types import (
     InvertedIndex,
-    DocumentMatrix,
     Metadata,
     ParsedDir,
     ParsedFile,
@@ -102,7 +101,7 @@ def index_documents(
     metadata = generate_metadata(ctx, success)
 
     result_dict: ParsedDirResults = {
-        path: val["result"] for path, val in success.items()
+        path: val["tokens"] for path, val in success.items()
     }
 
     ii = merge_word_count_dicts(ctx, result_dict, metadata)
@@ -113,16 +112,19 @@ def index_documents(
 
 
 def get_average_wc(metadata: Metadata) -> float:
-    return sum(
-        [metadata["files"][file]["word_count"] for file in metadata["files"]]
-    ) / len(metadata["files"])
+    return (
+        0
+        if len(metadata["files"]) == 0
+        else sum([metadata["files"][file]["word_count"] for file in metadata["files"]])
+        / len(metadata["files"])
+    )
 
 
 def generate_metadata(ctx: Context, info: ParsedDirSuccess) -> Metadata:
     if ctx.verbose:
         logger.info("Generating metadata")
 
-    metadata: Metadata = {
+    metadata = {
         "total_docs": len(info),
         "stripper": ctx.stripper,
         "files": {},
