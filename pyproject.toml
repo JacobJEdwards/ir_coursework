@@ -1,0 +1,69 @@
+[build-system]
+requires = []
+build-backend = ""
+
+[project]
+name = "ir-coursework"
+version = "1.0"
+dependencies = [
+    "annotated-types>=0.6.0",
+    "beautifulsoup4>=4.12.2",
+    "blis>=0.7.11",
+    "bs4>=0.0.1",
+    "catalogue>=2.0.10",
+    "certifi>=2023.7.22",
+    "charset-normalizer>=3.3.1",
+    "click>=8.1.7",
+    "cloudpathlib>=0.16.0",
+    "confection>=0.1.3",
+    "cymem>=2.0.8",
+    "editdistpy>=0.1.3",
+    "html5lib>=1.1",
+    "idna>=3.4",
+    "Jinja2>=3.1.2",
+    "joblib>=1.3.2",
+    "langcodes>=3.3.0",
+    "lxml>=4.9.3",
+    "markdown-it-py>=3.0.0",
+    "MarkupSafe>=2.1.3",
+    "mdurl>=0.1.2",
+    "murmurhash>=1.0.10",
+    "mypy>=1.6.1",
+    "mypy-extensions>=1.0.0",
+    "nltk>=3.8.1",
+    "numpy>=1.26.1",
+    "packaging>=23.2",
+    "pip>=23.3.1",
+    "preshed>=3.0.9",
+    "pydantic>=2.4.2",
+    "pydantic_core>=2.10.1",
+    "Pygments>=2.17.2",
+    "regex>=2023.10.3",
+    "requests>=2.31.0",
+    "rich>=13.7.0",
+    "setuptools>=65.5.0",
+    "six>=1.16.0",
+    "smart-open>=6.4.0",
+    "soupsieve>=2.5",
+    "srsly>=2.4.8",
+    "symspellpy>=6.7.7",
+    "thinc>=8.2.1",
+    "tqdm>=4.66.1",
+    "typer>=0.9.0",
+    "types-beautifulsoup4>=4.12.0.6",
+    "types-html5lib>=1.1.11.15",
+    "typing_extensions>=4.8.0",
+    "urllib3>=2.0.7",
+    "wasabi>=1.1.2",
+    "weasel>=0.3.3",
+    "webencodings>=0.5.1",
+]
+requires-python = ">=3.11"
+authors = [{ name = "Jacob Edwards", email = "jvt22fbu@uea.ac.uk" }]
+readme = "README.md"
+
+
+[project.optional-dependencies]
+[tool.ruff]
+[tool.black]
+[tool.mypy]

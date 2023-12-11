@@ -3,28 +3,46 @@ import logging
 from config import LOG_LEVEL
 from dataclasses import dataclass
 from typing import Literal
-from args_parse import parser
+from args_parse import parser, ArgNamespace
+from parser.types import StripperType
+from rich.logging import RichHandler
+from resources import console
+
+ParserType = Literal["async", "mp", "mt", "sync"]
+ScorerType = Literal["tfidf", "bm25", "bm25+"]
+SearcherType = Literal["vector", "score"]
 
 
 @dataclass
 class Context:
     reindex: bool = False
-    stripper: Literal["lemmatize", "stem"] = "lemmatize"
-    parser_type: Literal["async", "mp", "sync"] = "async"
-    scorer: Literal["tfidf", "bm25", "bm25+"] = "bm25+"
-    searcher: Literal["vector", "score"] = "vector"
+    stripper: StripperType = "lemmatize"
+    parser_type: ParserType = "async"
+    scorer: ScorerType = "bm25+"
+    searcher: SearcherType = "vector"
     expand: bool = True
     spellcheck: bool = True
     weighted: bool = True
+    entities: bool = True
     verbose: bool = False
     stopwords: bool = False
 
 
-logging.basicConfig(level=LOG_LEVEL)
+FORMAT = "%(message)s"
+
+logging.basicConfig(
+    level=LOG_LEVEL,
+    format=FORMAT,
+    datefmt="[%X]",
+    handlers=[RichHandler(rich_tracebacks=True)],
+)
 logger = logging.getLogger(__name__)
 
 
-def generate_context(args) -> Context:
+def generate_context(args: ArgNamespace) -> Context:
+    if args.stopwords:
+        args.regen = True
+
     if args.all:
         return Context(
             stripper=args.stripper,
@@ -46,6 +64,7 @@ def generate_context(args) -> Context:
         scorer=args.scorer,
         searcher=args.searcher,
         stopwords=args.stopwords,
+        entities=args.entities,
     )
 
 
@@ -53,6 +72,7 @@ def main() -> None:
     from search.search import search
 
     args = parser.parse_args()
+
     ctx = generate_context(args)
 
     if ctx.verbose:

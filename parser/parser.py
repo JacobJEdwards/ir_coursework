@@ -1,15 +1,13 @@
 import pickle
 from pathlib import Path
 
-import nltk
-
 from main import Context
 from search.types import QueryTerm
 
 from bs4 import BeautifulSoup
 from bs4.element import Comment
 from nltk.tokenize import word_tokenize
-from nltk.probability import FreqDist
+from collections import Counter
 from config import PICKLE_DIR
 from typing import BinaryIO, NoReturn, Sequence, assert_never, Literal
 import logging
@@ -26,9 +24,9 @@ from parser.types import (
     Token,
     FileParseSuccess,
     ParsedDirResults,
-    Entity,
     Weight,
     DocEntity,
+    StripperType,
 )
 
 
@@ -60,7 +58,7 @@ def filter_tokens(
     )
 
 
-def get_strip_func(strip_type: Literal["lemmatize", "stem"]) -> StripFunc:
+def get_strip_func(strip_type: StripperType) -> StripFunc:
     match strip_type:
         case "lemmatize":
             return lemmatizer.lemmatize
@@ -94,20 +92,20 @@ def parse_contents(
     for i, el in enumerate(soup.find_all()):
         filtered_text = filter_text(get_strip_func(ctx.stripper), el.get_text())
 
-        for j, sent in enumerate(nltk.sent_tokenize(el.get_text())):
-            for chunk in nltk.ne_chunk(nltk.pos_tag(nltk.word_tokenize(sent))):
-                if hasattr(chunk, "label"):
-                    entities.append(
-                        DocEntity(
-                            " ".join(c[0] for c in chunk).lower(),
-                            file.name,
-                            Entity.get_entity(chunk.label()),
-                            j,
-                        )
-                    )
+        # for j, sent in enumerate(nltk.sent_tokenize(el.get_text())):
+        # for chunk in nltk.ne_chunk(nltk.pos_tag(nltk.word_tokenize(sent))):
+        # if hasattr(chunk, "label"):
+        # entities.append(
+        #    DocEntity(
+        # " ".join(c[0] for c in chunk).lower(),
+        # file.name,
+        # Entity.get_entity(chunk.label()),
+        # j,
+        # )
+        # )
 
-        weight = Weight.get_word_weight(el.name)
-        counts: FreqDist = get_count(filtered_text)
+        weight: float = Weight.get_word_weight(el.name)
+        counts: Counter = get_count(filtered_text)
 
         for name, count in counts.items():
             tokens[name].append(
@@ -139,11 +137,11 @@ def parse_contents(
             )
         )
 
-    return {"tokens": occurrences, "entities": entities, "word_count": total_words}
+    return {"tokens": occurrences, "entities": None, "word_count": total_words}
 
 
-def get_count(words: list[str]) -> FreqDist:
-    return FreqDist(words)
+def get_count(words: list[str]) -> Counter:
+    return Counter(words)
 
 
 def set_weightings_ii(ctx: Context, ii: InvertedIndex, metadata: Metadata) -> None:
@@ -206,16 +204,10 @@ def generate_document_matrix(
 
     vector_space = list(ii.keys())
 
-    # maybe below would be better ?
-    # matrix = np.zeros([len(ii.keys()), len(metadata["files"])])
-
-    doc_dict = {}
+    doc_dict = defaultdict(lambda: np.zeros(len(vector_space)))
 
     for i, term in enumerate(vector_space):
         for occ in ii[term].occurrences:
-            if occ.filename not in doc_dict:
-                doc_dict[occ.filename] = np.zeros(len(vector_space))
-
             match ctx.scorer:
                 case "tfidf":
                     score = occ.tfidf
@@ -252,9 +244,9 @@ def pickle_obj(ctx: Context, data: InvertedIndex) -> None | NoReturn:
         exit(1)
 
 
-def depickle_obj(ctx: Context) -> InvertedIndex | NoReturn:
+def unpickle_obj(ctx: Context) -> InvertedIndex | NoReturn:
     if ctx.verbose:
-        logger.info("Depickling index")
+        logger.info("Unpickling index")
     try:
         with open(get_pickle_name(ctx.stripper), "rb") as f:
             data = pickle.load(f)

@@ -1,5 +1,4 @@
-###### IHAVE BROKEN SOMETHING
-
+import os
 from typing import assert_never, Sequence
 from nltk.corpus import wordnet
 from parser.parser import filter_tokens, get_strip_func, filter_text
@@ -11,7 +10,7 @@ from search.ranking import (
     cosine_similarity,
 )
 from collections import defaultdict
-from resources import sym_spell
+from resources import sym_spell, console
 from symspellpy import Verbosity
 import numpy as np
 from main import Context
@@ -20,6 +19,8 @@ import logging
 from search.types import SearchResults, SearchResult, QueryTerm
 from config import VOCAB_PATH
 from utils import timeit
+from functools import partial
+from rich.prompt import Prompt, Confirm
 
 logger = logging.getLogger(__name__)
 
@@ -50,8 +51,7 @@ def get_suggestions_external(
                 new_tokens.append(token)
                 break
 
-            print("Did you mean: ", suggestion.term)
-            if input("Y/N: ").lower() == "y":
+            if Confirm.ask(f"Did you mean {suggestion.term}?"):
                 new_tokens.append(QueryTerm(term=suggestion.term, weight=token.weight))
                 break
         else:
@@ -69,7 +69,6 @@ def l_distance_iter(a: str, b: str) -> int:
     if abs(len_a > len_b):
         return abs(len_a - len_b)
 
-    # ensure a is the shorter string
     if len_a > len_b:
         a, b = b, a
         len_a, len_b = len_b, len_a
@@ -139,9 +138,11 @@ def get_suggestions_internal(
             new_tokens.append(token)
             continue
 
+        if print_terms:
+            logging.info(f"Top suggestions: {top_3}")
+
         for suggestion in top_3:
-            print("Did you mean: ", suggestion)
-            if input("Y/N: ").lower() == "y":
+            if Confirm.ask(f"Did you mean {suggestion}?"):
                 new_tokens.append(QueryTerm(term=suggestion[0], weight=token.weight))
                 break
         else:  # only executed if not broken
@@ -171,7 +172,7 @@ def _clean_tokenized_input(
     ctx: Context, tokens: Sequence[QueryTerm], metadata: Metadata
 ) -> list[QueryTerm]:
     if ctx.spellcheck:
-        tokens = get_suggestions_internal(tokens, ctx.verbose)
+        tokens = get_suggestions_external(tokens, ctx.verbose)
 
     if ctx.expand:
         tokens = expand_query(tokens, ctx.verbose)
@@ -194,7 +195,10 @@ def clean_input(ctx: Context, user_input: str, metadata: Metadata) -> list[Query
 
 
 def get_input(ctx: Context, metadata: Metadata) -> list[QueryTerm]:
-    user_input = input("Enter search term(s): ")
+    print()
+    if (user_input := Prompt.ask("Enter search term(s)", default="exit")) == "exit":
+        exit(0)
+
     print()
     return clean_input(ctx, user_input, metadata)
 
@@ -243,11 +247,11 @@ def vectorise_query(
 @timeit
 def search_vecs(
     ctx: Context,
-    query_terms: Sequence[QueryTerm],
     doc_vecs: dict[str, np.ndarray],
     vec_space: Sequence[str],
     ii: InvertedIndex,
     metadata: Metadata,
+    query_terms: Sequence[QueryTerm],
 ) -> SearchResults:
     query_vec = vectorise_query(ctx, query_terms, vec_space, ii, metadata)
     results = defaultdict(float)
@@ -261,9 +265,9 @@ def search_vecs(
 @timeit
 def search_idf(
     ctx: Context,
-    query_terms: set[QueryTerm],
     inverted_index: InvertedIndex,
     metadata: Metadata,
+    query_terms: set[QueryTerm],
 ) -> SearchResults:
     results = defaultdict(float)
 
@@ -298,28 +302,33 @@ def print_result(ctx: Context, result: SearchResult, metadata: Metadata) -> None
     if doc in metadata["files"] and metadata["files"][doc]["info"] is not None:
         info: dict = metadata["files"][doc]["info"]
         for key, val in info.items():
-            print(f"{key}: {val}")
+            if "url" in key:
+                console.print(
+                    f"[bold]{key}[/bold]: [link=file://{os.getcwd()}/{val.replace(r'/ps2.gamespy.com', '')}]{val}[/link]"
+                )
+            else:
+                console.print(f"[bold]{key}[/bold]: {val}")
 
     else:
-        print(f"Document: {doc}")
+        console.print(f"[blue]Document: {doc}[/blue]")
 
     if ctx.verbose:
-        print(f"Score: {score}")
+        console.print(f"[italic]Score:[/italic] {score}")
 
-    print()
+    console.print("\n")
 
 
 def print_results(ctx: Context, results: SearchResults, metadata: Metadata) -> None:
     if len(results) == 0:
-        print("No results found")
+        console.print("[red]No results found[/red]")
         return
 
     for i, (doc, score) in enumerate(results):
-        print(f"{int(i)+1}:")
+        console.print(f"[green]Result {int(i) + 1}[/green]:")
         print_result(ctx, (doc, score), metadata)
 
 
-# issue with this is that the vocab will have been lemmed or stemmed
+# issue with this is that the vocab will have been lemmatized or stemmed
 def generate_vocab(ctx: Context, vocab: InvertedIndex) -> None:
     if ctx.verbose:
         logger.info("Generating dictionary")
@@ -341,16 +350,27 @@ def search(ctx: Context) -> None:
 
     metadata: Metadata = get_metadata(ctx)
 
+    # might be nicer to convert search funcs into closures -> one closure ??
+    # or alternatively single dispatch method
+    match ctx.searcher:
+        case "vector":
+            search_func = partial(
+                search_vecs,
+                ctx,
+                doc_vectors,
+                vec_space,
+                ii,
+                metadata,
+            )
+        case "score":
+            search_func = partial(search_idf, ctx, ii, metadata)
+        case _:
+            assert_never("Unreachable")
+
     while True:
         user_input = get_input(ctx, metadata)
-        match ctx.searcher:
-            case "vector":
-                results: SearchResults = search_vecs(
-                    ctx, user_input, doc_vectors, vec_space, ii, metadata
-                )
-            case "score":
-                results: SearchResults = search_idf(ctx, set(user_input), ii, metadata)
-            case _:
-                assert_never("Unreachable")
+
+        with console.status("Searching..."):
+            results: SearchResults = search_func(user_input)
 
         print_results(ctx, results, metadata)

@@ -141,18 +141,13 @@ class Token:
 
 InvertedIndex = dict[str, Token]
 StripFunc = Callable[[str], str]
-
-
-# could use class to emcapuslate parsing together documents, or genreating dm
-class II(dict):
-    def __init__(self, *args, **kwargs):
-        dict.__init__(self, *args, **kwargs)
+StripperType = Literal["lemmatize", "stem"]
 
 
 class FileParseSuccess(TypedDict):
     tokens: list[DocOccurrences]
     word_count: int
-    entities: list[DocEntity]
+    entities: list[DocEntity] | None
 
 
 ParsedFile = FileParseSuccess | Exception

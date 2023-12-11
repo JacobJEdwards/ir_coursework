@@ -1,4 +1,5 @@
-from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
+from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter, Namespace
+from collections import namedtuple
 
 
 parser = ArgumentParser(
@@ -81,3 +82,12 @@ parser.add_argument(
     dest="stopwords",
     help="disable removal of stopwords",
 )
+
+parser.add_argument(
+    "--entities",
+    action="store_true",
+    dest="entities",
+    help="enable use of named entities",
+)
+
+ArgNamespace = namedtuple("ArgNamespace", [act.dest for act in parser._actions])

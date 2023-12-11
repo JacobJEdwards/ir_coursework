@@ -11,7 +11,7 @@ from config import VIDEOGAMES_DIR, VIDEOGAME_LABELS
 from parser.parser import (
     merge_word_count_dicts,
     pickle_obj,
-    depickle_obj,
+    unpickle_obj,
     parse_contents,
     get_pickle_name,
     generate_document_matrix,
@@ -28,6 +28,7 @@ from utils import timeit
 import logging
 import csv
 import asyncio
+from resources import console
 
 
 logger = logging.getLogger(__name__)
@@ -73,19 +74,7 @@ def needs_reindexing(ctx: Context) -> bool:
         return True
 
 
-@timeit
-def index_documents(
-    ctx: Context,
-) -> tuple[InvertedIndex, dict[str, np.ndarray], list[str]]:
-    needs_regen = needs_reindexing(ctx)
-
-    if not needs_regen:
-        metadata = get_metadata(ctx)
-        ii = depickle_obj(ctx)
-        vec_space, doc_vectors = generate_document_matrix(ctx, ii, metadata)
-
-        return ii, doc_vectors, vec_space
-
+def _index_documents(ctx: Context) -> InvertedIndex:
     results = parse_dir(ctx, VIDEOGAMES_DIR)
 
     success: ParsedDirSuccess = {}
@@ -101,16 +90,37 @@ def index_documents(
     metadata = generate_metadata(ctx, success)
 
     result_dict: ParsedDirResults = {
-        path: val["tokens"] for path, val in success.items()
+        path: res["tokens"] for path, res in success.items()
     }
 
-    ii = merge_word_count_dicts(ctx, result_dict, metadata)
+    return merge_word_count_dicts(ctx, result_dict, metadata)
+
+
+@timeit
+def index_documents(
+    ctx: Context,
+) -> tuple[InvertedIndex, dict[str, np.ndarray], list[str]]:
+    needs_regen: bool = needs_reindexing(ctx)
+
+    if not needs_regen:
+        metadata = get_metadata(ctx)
+        ii = unpickle_obj(ctx)
+        vec_space, doc_vectors = generate_document_matrix(ctx, ii, metadata)
+
+        return ii, doc_vectors, vec_space
+
+    with console.status("Indexing documents..."):
+        ii = _index_documents(ctx)
+
+    metadata = get_metadata(ctx)
+
     vec_space, doc_vecs = generate_document_matrix(ctx, ii, metadata)
 
     pickle_obj(ctx, ii)
     return ii, doc_vecs, vec_space
 
 
+# ugly
 def get_average_wc(metadata: Metadata) -> float:
     return (
         0
