@@ -34,6 +34,16 @@ logger = logging.getLogger(__name__)
 
 
 def filter_text(strip_func: StripFunc, text: str) -> list[str]:
+    """
+    Tokenizes the input text, cleans it, and filters tokens based on the provided strip function.
+
+    Args:
+        strip_func (StripFunc): A function used to strip/clean tokens.
+        text (str): The input text to be processed.
+
+    Returns:
+        list[str]: A list of filtered tokens after applying the strip function.
+    """
     return filter_tokens(strip_func, word_tokenize(clean_text(text)))
 
 
@@ -42,7 +52,19 @@ def filter_tokens(
     tokens: Sequence[str | QueryTerm],
     query: bool = False,
     remove_stopwords: bool = True,
-) -> list[str | QueryTerm]:
+) -> list[str] | list[QueryTerm]:
+    """
+    Filters tokens based on the provided strip function and other criteria.
+
+    Args:
+        strip_func (StripFunc): A function used to strip/clean tokens.
+        tokens (Sequence[Union[str, QueryTerm]]): Sequence of tokens to filter.
+        query (bool, optional): Flag indicating if the tokens represent a query. Defaults to False.
+        remove_stopwords (bool, optional): Flag to remove stopwords. Defaults to True.
+
+    Returns:
+        list[QueryTerm] | list[str]: A list of filtered tokens after applying the strip function.
+    """
     return (
         [
             strip_func(word)
@@ -59,6 +81,15 @@ def filter_tokens(
 
 
 def get_strip_func(strip_type: StripperType) -> StripFunc:
+    """
+    Returns the appropriate stripping function based on the specified type.
+
+    Args:
+        strip_type (Literal["lemmatize", "stem"]): Type of stripping function required.
+
+    Returns:
+        StripFunc: The stripping function (lemmatization or stemming).
+    """
     match strip_type:
         case "lemmatize":
             return lemmatizer.lemmatize
@@ -69,12 +100,32 @@ def get_strip_func(strip_type: StripperType) -> StripFunc:
 
 
 def clean_text(text: str) -> str:
+    """
+    Cleans the input text by replacing certain characters and converting it to lowercase.
+
+    Args:
+        text (str): The input text to be cleaned.
+
+    Returns:
+        str: The cleaned text.
+    """
     return text.replace("-", " ").translate(translator).lower()
 
 
 def parse_contents(
     ctx: Context, file: BinaryIO, parser: str = "lxml"
 ) -> FileParseSuccess:
+    """
+    Parses the contents of a file using BeautifulSoup, extracts tokens, and calculates occurrences.
+
+    Args:
+        ctx (Context): The context or configuration for parsing.
+        file (BinaryIO): The file object to be parsed.
+        parser (str, optional): The parser to use with BeautifulSoup. Defaults to "lxml".
+
+    Returns:
+        FileParseSuccess: A dictionary containing tokens, entities, and word count information.
+    """
     soup = BeautifulSoup(file.read(), features=parser)
     # remove unneeded info
     comments = soup.find_all(string=lambda element: isinstance(element, Comment))
@@ -141,10 +192,30 @@ def parse_contents(
 
 
 def get_count(words: list[str]) -> Counter:
+    """
+    Counts the occurrences of words in a list and returns a Counter object.
+
+    Args:
+        words (list[str]): A list of words to count occurrences.
+
+    Returns:
+        Counter: A Counter object containing the count of each word in the input list.
+    """
     return Counter(words)
 
 
 def set_weightings_ii(ctx: Context, ii: InvertedIndex, metadata: Metadata) -> None:
+    """
+    Calculates and assigns various weightings to tokens in the inverted index.
+
+    Args:
+        ctx (Context): The context or configuration for weighting.
+        ii (InvertedIndex): The inverted index containing tokens and their occurrences.
+        metadata (Metadata): Metadata containing document-level information.
+
+    Returns:
+        None
+    """
     for word, token in ii.items():
         doc_count = len(token.occurrences)
 
@@ -175,6 +246,17 @@ def set_weightings_ii(ctx: Context, ii: InvertedIndex, metadata: Metadata) -> No
 def merge_word_count_dicts(
     ctx: Context, doc_dict: ParsedDirResults, metadata: Metadata
 ) -> InvertedIndex:
+    """
+    Merges word count dictionaries and generates an inverted index with weighted tokens.
+
+    Args:
+        ctx (Context): The context or configuration for merging and weighting.
+        doc_dict (ParsedDirResults): Dictionary containing word occurrences in documents.
+        metadata (Metadata): Metadata containing document-level information.
+
+    Returns:
+        InvertedIndex: The resulting inverted index with weighted tokens.
+    """
     ii: InvertedIndex = {}
 
     for name, occurrences in doc_dict.items():
@@ -199,6 +281,17 @@ def merge_word_count_dicts(
 def generate_document_matrix(
     ctx: Context, ii: InvertedIndex, metadata: Metadata
 ) -> tuple[list[str], dict[str, np.ndarray]]:
+    """
+    Generates a document-term matrix based on the weighted tokens in the inverted index.
+
+    Args:
+        ctx (Context): The context or configuration for matrix generation.
+        ii (InvertedIndex): The inverted index containing weighted tokens.
+        metadata (Metadata): Metadata containing document-level information.
+
+    Returns:
+        tuple[list[str], dict[str, np.ndarray]]: A tuple containing vector space and document matrix.
+    """
     if ctx.verbose:
         logger.info("Generating document matrix")
 
@@ -226,12 +319,31 @@ def generate_document_matrix(
     return vector_space, doc_dict
 
 
-def get_pickle_name(stripper: Literal["lemmatize", "stem"]) -> Path:
+def get_pickle_name(stripper: StripperType) -> Path:
+    """
+    Generates the pickle file name based on the chosen stripping method.
+
+    Args:
+        stripper (Literal["lemmatize", "stem"]): The stripping method used.
+
+    Returns:
+        Path: The path to the pickle file.
+    """
     PICKLE_DIR.mkdir(exist_ok=True)
     return PICKLE_DIR / f"{stripper}.pkl"
 
 
 def pickle_obj(ctx: Context, data: InvertedIndex) -> None | NoReturn:
+    """
+    Pickles the inverted index data.
+
+    Args:
+        ctx (Context): The context or configuration for pickling.
+        data (InvertedIndex): The inverted index data to be pickled.
+
+    Returns:
+        None | NoReturn: None if successful, NoReturn if an error occurs.
+    """
     if ctx.verbose:
         logger.info("Pickling index")
 
@@ -245,6 +357,15 @@ def pickle_obj(ctx: Context, data: InvertedIndex) -> None | NoReturn:
 
 
 def unpickle_obj(ctx: Context) -> InvertedIndex | NoReturn:
+    """
+    Unpickles the inverted index data.
+
+    Args:
+        ctx (Context): The context or configuration for unpickling.
+
+    Returns:
+        InvertedIndex | NoReturn: The unpickled inverted index if successful, NoReturn if an error occurs.
+    """
     if ctx.verbose:
         logger.info("Unpickling index")
     try:

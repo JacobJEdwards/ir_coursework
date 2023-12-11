@@ -51,7 +51,7 @@ def get_suggestions_external(
                 new_tokens.append(token)
                 break
 
-            if Confirm.ask(f"Did you mean {suggestion.term}?"):
+            if Confirm.ask(f"Did you mean [bold]{suggestion.term}[/bold]?"):
                 new_tokens.append(QueryTerm(term=suggestion.term, weight=token.weight))
                 break
         else:
@@ -63,10 +63,20 @@ def get_suggestions_external(
 # out of range error !!!!!!!!!!!
 # TODO: fix
 def l_distance_iter(a: str, b: str) -> int:
+    """
+    Computes the Levenshtein distance (edit distance) between two strings using an iterative approach.
+
+    Args:
+    a (str): First string.
+    b (str): Second string.
+
+    Returns:
+    int: The Levenshtein distance between the input strings a and b.
+    """
     len_a = len(a)
     len_b = len(b)
 
-    if abs(len_a > len_b):
+    if abs(len_a > len_b) > 0:
         return abs(len_a - len_b)
 
     if len_a > len_b:
@@ -81,9 +91,13 @@ def l_distance_iter(a: str, b: str) -> int:
     for i in range(len_b + 1):
         d[0][i] = i
 
-    for j in range(1, len_a + 1):
-        for i in range(1, len_b + 1):
-            cost = 0 if a[i - 1] == b[j - 1] else 1
+    for i in range(1, len_b - 1):
+        for j in range(1, len_a - 1):
+            if i - 1 < len(a) and j - 1 < len(b):
+                cost = 0 if a[i - 1] == b[j - 1] else 1
+            else:
+                # Handle index out of range case
+                cost = 0  # Or any other strategy to handle the situation
 
             d[i][j] = min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost)
 
@@ -91,6 +105,16 @@ def l_distance_iter(a: str, b: str) -> int:
 
 
 def l_distance_rec(a: str, b: str) -> int:
+    """
+    Computes the Levenshtein distance (edit distance) between two strings using a recursive approach.
+
+    Args:
+    a (str): First string.
+    b (str): Second string.
+
+    Returns:
+    int: The Levenshtein distance between the input strings a and b.
+    """
     memo = {}
 
     def helper(i, j):
@@ -130,7 +154,7 @@ def get_suggestions_internal(
     vocab = load_words()
     new_tokens = []
     for token in tokens:
-        distances = {word: l_distance_iter(token.term, word) for word in vocab}
+        distances = {word: l_distance_rec(token.term, word) for word in vocab}
 
         top_3: list[tuple[str, int]] = sorted(distances.items(), key=lambda x: x[1])[:3]
 
@@ -142,10 +166,10 @@ def get_suggestions_internal(
             logging.info(f"Top suggestions: {top_3}")
 
         for suggestion in top_3:
-            if Confirm.ask(f"Did you mean {suggestion}?"):
+            if Confirm.ask(f"Did you mean [bold]{suggestion[0]}[/bold]?"):
                 new_tokens.append(QueryTerm(term=suggestion[0], weight=token.weight))
                 break
-        else:  # only executed if not broken
+        else:  # only executed if loop not broken
             new_tokens.append(token)
 
     return new_tokens
@@ -172,7 +196,7 @@ def _clean_tokenized_input(
     ctx: Context, tokens: Sequence[QueryTerm], metadata: Metadata
 ) -> list[QueryTerm]:
     if ctx.spellcheck:
-        tokens = get_suggestions_external(tokens, ctx.verbose)
+        tokens = get_suggestions_internal(tokens, ctx.verbose)
 
     if ctx.expand:
         tokens = expand_query(tokens, ctx.verbose)
@@ -195,11 +219,11 @@ def clean_input(ctx: Context, user_input: str, metadata: Metadata) -> list[Query
 
 
 def get_input(ctx: Context, metadata: Metadata) -> list[QueryTerm]:
-    print()
+    console.print()
     if (user_input := Prompt.ask("Enter search term(s)", default="exit")) == "exit":
         exit(0)
 
-    print()
+    console.print()
     return clean_input(ctx, user_input, metadata)
 
 
@@ -212,8 +236,8 @@ def vectorise_query(
 ) -> np.ndarray:
     query_vector = np.zeros(len(vec_space))
 
-    terms = [query.term for query in query_terms]
-    # this is the problem
+    terms: list[str] = [query.term for query in query_terms]
+
     for i, term in enumerate(vec_space):
         if term in terms:
             term_count = terms.count(term)
@@ -236,8 +260,9 @@ def vectorise_query(
                 case _:
                     assert_never("Unreachable")
 
-            # if ctx.weighted:
-            # score = score * term.weight
+            if ctx.weighted:
+                query_term = next(token for token in query_terms if token.term == term)
+                score = score * query_term.weight
 
             query_vector[i] = score
 
@@ -267,7 +292,7 @@ def search_idf(
     ctx: Context,
     inverted_index: InvertedIndex,
     metadata: Metadata,
-    query_terms: set[QueryTerm],
+    query_terms: Sequence[QueryTerm],
 ) -> SearchResults:
     results = defaultdict(float)
 

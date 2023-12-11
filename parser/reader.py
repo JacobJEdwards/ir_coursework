@@ -35,6 +35,15 @@ logger = logging.getLogger(__name__)
 
 
 def get_metadata(ctx) -> Metadata | None:
+    """
+    Loads metadata from a JSON file and returns it if successful, otherwise returns None.
+
+    Args:
+        ctx (Context): The context or configuration for loading metadata.
+
+    Returns:
+        Metadata | None: The loaded metadata if successful, None otherwise.
+    """
     if ctx.verbose:
         logger.info("Loading metadata")
 
@@ -51,6 +60,15 @@ def get_metadata(ctx) -> Metadata | None:
 
 
 def needs_reindexing(ctx: Context) -> bool:
+    """
+    Checks whether reindexing is required based on context and file modification times.
+
+    Args:
+        ctx (Context): The context or configuration for checking reindexing.
+
+    Returns:
+        bool: True if reindexing is needed, False otherwise.
+    """
     if ctx.reindex:
         return True
 
@@ -75,6 +93,15 @@ def needs_reindexing(ctx: Context) -> bool:
 
 
 def _index_documents(ctx: Context) -> InvertedIndex:
+    """
+    Indexes documents in a directory and returns the resulting inverted index.
+
+    Args:
+        ctx (Context): The context or configuration for document indexing.
+
+    Returns:
+        InvertedIndex: The inverted index containing indexed documents.
+    """
     results = parse_dir(ctx, VIDEOGAMES_DIR)
 
     success: ParsedDirSuccess = {}
@@ -100,6 +127,15 @@ def _index_documents(ctx: Context) -> InvertedIndex:
 def index_documents(
     ctx: Context,
 ) -> tuple[InvertedIndex, dict[str, np.ndarray], list[str]]:
+    """
+    Indexes documents if reindexing is needed; otherwise, loads cached data.
+
+    Args:
+        ctx (Context): The context or configuration for document indexing.
+
+    Returns:
+        tuple[InvertedIndex, dict[str, np.ndarray], list[str]]: A tuple containing inverted index, document vectors, and vector space.
+    """
     needs_regen: bool = needs_reindexing(ctx)
 
     if not needs_regen:
@@ -122,6 +158,15 @@ def index_documents(
 
 # ugly
 def get_average_wc(metadata: Metadata) -> float:
+    """
+    Calculates the average word count from metadata.
+
+    Args:
+        metadata (Metadata): The metadata containing file information.
+
+    Returns:
+        float: The average word count of files in the metadata.
+    """
     return (
         0
         if len(metadata["files"]) == 0
@@ -131,6 +176,16 @@ def get_average_wc(metadata: Metadata) -> float:
 
 
 def generate_metadata(ctx: Context, info: ParsedDirSuccess) -> Metadata:
+    """
+    Generates metadata based on parsed directory information.
+
+    Args:
+        ctx (Context): The context or configuration for metadata generation.
+        info (ParsedDirSuccess): Directory parsing information.
+
+    Returns:
+        Metadata: The generated metadata.
+    """
     if ctx.verbose:
         logger.info("Generating metadata")
 
@@ -191,6 +246,16 @@ def generate_metadata(ctx: Context, info: ParsedDirSuccess) -> Metadata:
 
 
 def _parse_file(ctx: Context, file_path: Path) -> ParsedFile:
+    """
+    Parses an individual file.
+
+    Args:
+        ctx (Context): The context or configuration for file parsing.
+        file_path (Path): The path to the file to be parsed.
+
+    Returns:
+        ParsedFile: The parsing results of the file.
+    """
     try:
         with open(file_path, "rb") as f:
             results = parse_contents(ctx, f)
@@ -203,6 +268,16 @@ def _parse_file(ctx: Context, file_path: Path) -> ParsedFile:
 
 
 async def _parse_file_async(ctx: Context, file_path: Path) -> ParsedFile:
+    """
+    Parses an individual file asynchronously.
+
+    Args:
+        ctx (Context): The context or configuration for file parsing.
+        file_path (Path): The path to the file to be parsed.
+
+    Returns:
+        ParsedFile: The parsing results of the file.
+    """
     try:
         with open(file_path, "rb") as f:
             results = parse_contents(ctx, f)
@@ -217,6 +292,16 @@ def parse_dir(
     ctx: Context,
     directory: Path,
 ) -> ParsedDir:
+    """
+    Parses a directory based on the chosen parsing method.
+
+    Args:
+        ctx (Context): The context or configuration for directory parsing.
+        directory (Path): The path to the directory to be parsed.
+
+    Returns:
+        ParsedDir: The parsing results of the directory.
+    """
     if not directory.is_dir():
         logger.critical("Cannot find files")
         exit(1)
@@ -239,6 +324,16 @@ def _parse_dir_sync(
     ctx: Context,
     directory: Path,
 ) -> ParsedDir:
+    """
+    Parses a directory synchronously.
+
+    Args:
+        ctx (Context): The context or configuration for directory parsing.
+        directory (Path): The path to the directory to be parsed.
+
+    Returns:
+        ParsedDir: The parsing results of the directory.
+    """
     try:
         results = map(lambda file: (file, _parse_file(ctx, file)), directory.iterdir())
 
@@ -253,7 +348,18 @@ def _parse_dir_mp(
     ctx: Context,
     directory: Path,
 ) -> ParsedDir:
-    logger.debug("Beginning file parsing")
+    """
+    Parses a directory using multiprocessing.
+
+    Args:
+        ctx (Context): The context or configuration for directory parsing.
+        directory (Path): The path to the directory to be parsed.
+
+    Returns:
+        ParsedDir: The parsing results of the directory.
+    """
+    if ctx.verbose:
+        logger.info("Beginning file parsing")
     try:
         with multiprocessing.Pool() as pool:
             # use a list of (file_path, result) tuples to store results
@@ -285,6 +391,16 @@ async def _parse_dir_async(
     ctx: Context,
     directory: Path,
 ) -> ParsedDir:
+    """
+    Parses a directory asynchronously.
+
+    Args:
+        ctx (Context): The context or configuration for directory parsing.
+        directory (Path): The path to the directory to be parsed.
+
+    Returns:
+        ParsedDir: The parsing results of the directory.
+    """
     try:
         async with asyncio.TaskGroup() as tg:
             results = []
@@ -303,6 +419,16 @@ async def _parse_dir_async(
 
 @timeit
 def _parse_dir_mt(ctx: Context, directory: Path) -> ParsedDir:
+    """
+    Parses a directory using multithreading.
+
+    Args:
+        ctx (Context): The context or configuration for directory parsing.
+        directory (Path): The path to the directory to be parsed.
+
+    Returns:
+        ParsedDir: The parsing results of the directory.
+    """
     results = {}
 
     with concurrent.futures.ThreadPoolExecutor() as executor:

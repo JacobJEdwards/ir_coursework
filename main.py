@@ -15,6 +15,10 @@ SearcherType = Literal["vector", "score"]
 
 @dataclass
 class Context:
+    """
+    Dataclass to store configuration settings for the search.
+    """
+
     reindex: bool = False
     stripper: StripperType = "lemmatize"
     parser_type: ParserType = "async"
@@ -30,6 +34,7 @@ class Context:
 
 FORMAT = "%(message)s"
 
+# Configuring logging with RichHandler
 logging.basicConfig(
     level=LOG_LEVEL,
     format=FORMAT,
@@ -40,6 +45,15 @@ logger = logging.getLogger(__name__)
 
 
 def generate_context(args: ArgNamespace) -> Context:
+    """
+    Generates a Context object based on parsed command-line arguments.
+
+    Args:
+        args (ArgNamespace): Parsed command-line arguments.
+
+    Returns:
+        Context: Context object with configured settings.
+    """
     if args.stopwords:
         args.regen = True
 
@@ -69,6 +83,9 @@ def generate_context(args: ArgNamespace) -> Context:
 
 
 def main() -> None:
+    """
+    Main function to initiate search based on provided arguments.
+    """
     from search.search import search
 
     args = parser.parse_args()

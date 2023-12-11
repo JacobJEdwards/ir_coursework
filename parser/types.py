@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 
+# Defining TypedDicts to represent structured data
 class FileMetadata(TypedDict):
     last_modified: float
     file_size: int
@@ -19,9 +20,11 @@ class Metadata(TypedDict):
     average_wc: float
 
 
+# Typing for specific data structures
 DocumentMatrix = np.ndarray
 
 
+# Data class to represent occurrences of a word in a document
 @dataclass
 class DocOccurrences:
     filename: str
@@ -35,7 +38,9 @@ class DocOccurrences:
     bm25_plus: float = 0.0
 
 
+# Enum for defining weights based on HTML tag names
 class Weight(Enum):
+    # Enum members with associated weights for different HTML tags
     H1 = 1.5
     H2 = 1.4
     H3 = 1.3
@@ -53,6 +58,7 @@ class Weight(Enum):
 
     @classmethod
     def get_word_weight(cls: "Weight", tag_name: str) -> float:
+        # Method to retrieve weight based on the HTML tag
         match tag_name:
             case "h1":
                 weight = cls.H1.value
@@ -88,7 +94,9 @@ class Weight(Enum):
         return weight
 
 
+# Enum for different types of entities
 class Entity(Enum):
+    # Enum members representing different types of entities
     ORGANIZATION = 1
     GPE = 1
     PERSON = 1
@@ -97,6 +105,7 @@ class Entity(Enum):
 
     @classmethod
     def get_entity(cls: "Entity", label: str) -> "Entity":
+        # Method to retrieve an entity based on its label
         match label:
             case "ORGANIZATION":
                 tag = cls.ORGANIZATION
@@ -112,7 +121,7 @@ class Entity(Enum):
         return tag
 
 
-# doc token represents an instance of a word in a particular document
+# Data class to represent a token within a document
 @dataclass
 class DocToken:
     count: int
@@ -120,6 +129,7 @@ class DocToken:
     position: int
 
 
+# Data class representing an entity within a document
 @dataclass
 class DocEntity:
     token: str
@@ -128,7 +138,7 @@ class DocEntity:
     position: int | None = None
 
 
-# token represents
+# Data class representing a token in a document with its occurrences and positions
 @dataclass
 class Token:
     word: str
@@ -139,11 +149,13 @@ class Token:
     positions: list[list[int]]
 
 
+# Alias definitions for better readability and type hints
 InvertedIndex = dict[str, Token]
 StripFunc = Callable[[str], str]
 StripperType = Literal["lemmatize", "stem"]
 
 
+# TypedDicts and aliases for managing parsing results and directories
 class FileParseSuccess(TypedDict):
     tokens: list[DocOccurrences]
     word_count: int

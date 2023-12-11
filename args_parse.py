@@ -2,12 +2,15 @@ from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter, Namespace
 from collections import namedtuple
 
 
+# Creating an ArgumentParser instance to handle command-line arguments
 parser = ArgumentParser(
     prog="Information Retrieval",
     description="Search a collection of documents",
     formatter_class=ArgumentDefaultsHelpFormatter,
 )
 
+# Adding various arguments to the ArgumentParser
+# Each argument provides options, help descriptions, types, defaults, and destinations
 parser.add_argument(
     "--stripper",
     "-s",
@@ -90,4 +93,6 @@ parser.add_argument(
     help="enable use of named entities",
 )
 
+# Creating a named tuple to store the parsed argument namespace
+# It's constructed from the 'dest' attribute of each action added to the ArgumentParser
 ArgNamespace = namedtuple("ArgNamespace", [act.dest for act in parser._actions])
