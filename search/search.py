@@ -27,15 +27,27 @@ logger = logging.getLogger(__name__)
 
 # https://symspellpy.readthedocs.io
 def get_suggestions_external(
-    tokens: Sequence[QueryTerm], print_terms: bool = False
+    tokens: Sequence[QueryTerm], *, print_terms: bool = False
 ) -> list[QueryTerm]:
+    """
+    Get suggestions for tokens using SymSpell spell checking.
+
+    Args:
+    - tokens (Sequence[QueryTerm]): List of tokens to be checked.
+    - print_terms (bool, optional): Whether to print spell suggestions. Defaults to False.
+
+    Returns:
+    - list[QueryTerm]: List of tokens with corrected or unchanged terms.
+    """
     new_tokens = list(tokens)
     for token in tokens:
         suggestions = sym_spell.lookup(
             token.term, Verbosity.CLOSEST, max_edit_distance=2, include_unknown=True
         )
 
-        if suggestions[0].term == token.term or suggestions[0].distance == 0:
+        if len(suggestions) > 0 and (
+            suggestions[0].term == token.term or suggestions[0].distance == 0
+        ):
             new_tokens.append(QueryTerm(suggestions[0].term, token.weight))
             continue
 
@@ -140,6 +152,12 @@ def l_distance_rec(a: str, b: str) -> int:
 
 
 def load_words() -> set[str]:
+    """
+    Load words from a vocabulary file.
+
+    Returns:
+    - set[str]: Set of words loaded from the vocabulary file.
+    """
     words = set()
     with open(VOCAB_PATH, "r") as f:
         for line in f:
@@ -149,8 +167,18 @@ def load_words() -> set[str]:
 
 
 def get_suggestions_internal(
-    tokens: Sequence[QueryTerm], print_terms: bool = False
+    tokens: Sequence[QueryTerm], *, print_terms: bool = False
 ) -> list[QueryTerm]:
+    """
+    Get suggestions for query tokens from an internal vocabulary.
+
+    Args:
+    - tokens (Sequence[QueryTerm]): List of query tokens.
+    - print_terms (bool, optional): Whether to print suggestions. Defaults to False.
+
+    Returns:
+    - list[QueryTerm]: List of corrected or unchanged tokens.
+    """
     vocab = load_words()
     new_tokens = []
     for token in tokens:
@@ -158,7 +186,7 @@ def get_suggestions_internal(
 
         top_3: list[tuple[str, int]] = sorted(distances.items(), key=lambda x: x[1])[:3]
 
-        if top_3[0][1] == 0:
+        if len(top_3) < 1 or top_3[0][1] == 0:
             new_tokens.append(token)
             continue
 
@@ -175,10 +203,19 @@ def get_suggestions_internal(
     return new_tokens
 
 
-# need to give these less weight somehow
 def expand_query(
-    query_terms: Sequence[QueryTerm], print_terms: bool = False
+    query_terms: Sequence[QueryTerm], *, print_terms: bool = False
 ) -> list[QueryTerm]:
+    """
+    Expand query terms using synonyms from WordNet.
+
+    Args:
+    - query_terms (Sequence[QueryTerm]): List of query terms to be expanded.
+    - print_terms (bool, optional): Whether to print expanded terms. Defaults to False.
+
+    Returns:
+    - list[QueryTerm]: List of expanded query terms.
+    """
     new_terms = list(query_terms)
     for query_term in set(query_terms):
         syns = wordnet.synsets(query_term.term)
@@ -195,11 +232,22 @@ def expand_query(
 def _clean_tokenized_input(
     ctx: Context, tokens: Sequence[QueryTerm], metadata: Metadata
 ) -> list[QueryTerm]:
+    """
+    Clean and process a sequence of query tokens based on the provided context.
+
+    Args:
+    - ctx (Context): Context for processing.
+    - tokens (Sequence[QueryTerm]): Sequence of query tokens.
+    - metadata (Metadata): Metadata related to the query.
+
+    Returns:
+    - list[QueryTerm]: Processed list of query tokens.
+    """
     if ctx.spellcheck:
-        tokens = get_suggestions_internal(tokens, ctx.verbose)
+        tokens = get_suggestions_internal(tokens, print_terms=ctx.verbose)
 
     if ctx.expand:
-        tokens = expand_query(tokens, ctx.verbose)
+        tokens = expand_query(tokens, print_terms=ctx.verbose)
 
     tokens = filter_tokens(get_strip_func(ctx.stripper), tokens, query=True)
 
@@ -210,7 +258,17 @@ def _clean_tokenized_input(
 
 
 def clean_input(ctx: Context, user_input: str, metadata: Metadata) -> list[QueryTerm]:
-    # simple cleaner - prevent spell errors on stopwords (not in dictionary)
+    """
+    Process and clean user input for search.
+
+    Args:
+    - ctx (Context): Context for processing.
+    - user_input (str): User input as a string.
+    - metadata (Metadata): Metadata related to the query.
+
+    Returns:
+    - list[QueryTerm]: Processed list of query tokens.
+    """
     tokens = [
         QueryTerm(term=term, weight=1) for term in filter_text(lambda x: x, user_input)
     ]
@@ -219,6 +277,16 @@ def clean_input(ctx: Context, user_input: str, metadata: Metadata) -> list[Query
 
 
 def get_input(ctx: Context, metadata: Metadata) -> list[QueryTerm]:
+    """
+    Get user input and process it for search.
+
+    Args:
+    - ctx (Context): Context for processing.
+    - metadata (Metadata): Metadata related to the query.
+
+    Returns:
+    - list[QueryTerm]: Processed list of query tokens.
+    """
     console.print()
     if (user_input := Prompt.ask("Enter search term(s)", default="exit")) == "exit":
         exit(0)
@@ -234,6 +302,19 @@ def vectorise_query(
     ii: InvertedIndex,
     metadata: Metadata,
 ) -> np.ndarray:
+    """
+    Convert a query into a vector in the vector space.
+
+    Args:
+    - ctx (Context): Context for search.
+    - query_terms (Sequence[QueryTerm]): Query terms to be converted into a vector.
+    - vec_space (Sequence[str]): Vector space vocabulary.
+    - ii (InvertedIndex): Inverted index for document retrieval.
+    - metadata (Metadata): Metadata related to the query and documents.
+
+    Returns:
+    - np.ndarray: Vector representation of the query in the vector space.
+    """
     query_vector = np.zeros(len(vec_space))
 
     terms: list[str] = [query.term for query in query_terms]
@@ -278,6 +359,20 @@ def search_vecs(
     metadata: Metadata,
     query_terms: Sequence[QueryTerm],
 ) -> SearchResults:
+    """
+    Perform vector space-based search using query vectors.
+
+    Args:
+    - ctx (Context): Context for search.
+    - doc_vecs (dict[str, np.ndarray]): Dictionary containing document vectors.
+    - vec_space (Sequence[str]): Vector space vocabulary.
+    - ii (InvertedIndex): Inverted index for document retrieval.
+    - metadata (Metadata): Metadata related to the query and documents.
+    - query_terms (Sequence[QueryTerm]): Query terms.
+
+    Returns:
+    - SearchResults: List of search results.
+    """
     query_vec = vectorise_query(ctx, query_terms, vec_space, ii, metadata)
     results = defaultdict(float)
 
@@ -294,6 +389,18 @@ def search_idf(
     metadata: Metadata,
     query_terms: Sequence[QueryTerm],
 ) -> SearchResults:
+    """
+    Perform search using Inverted Document Frequency (IDF) scoring.
+
+    Args:
+    - ctx (Context): Context for search.
+    - inverted_index (InvertedIndex): Inverted index for document retrieval.
+    - metadata (Metadata): Metadata related to the query and documents.
+    - query_terms (Sequence[QueryTerm]): Query terms.
+
+    Returns:
+    - SearchResults: List of search results.
+    """
     results = defaultdict(float)
 
     for query in query_terms:
@@ -322,6 +429,17 @@ def search_idf(
 
 
 def print_result(ctx: Context, result: SearchResult, metadata: Metadata) -> None:
+    """
+    Print search result information for a single document.
+
+    Args:
+    - ctx (Context): Context for search.
+    - result (SearchResult): Tuple containing document ID and its score.
+    - metadata (Metadata): Metadata related to the documents.
+
+    Returns:
+    - None
+    """
     doc, score = result
 
     if doc in metadata["files"] and metadata["files"][doc]["info"] is not None:
@@ -344,6 +462,17 @@ def print_result(ctx: Context, result: SearchResult, metadata: Metadata) -> None
 
 
 def print_results(ctx: Context, results: SearchResults, metadata: Metadata) -> None:
+    """
+    Print search results for multiple documents.
+
+    Args:
+    - ctx (Context): Context for search.
+    - results (List[SearchResult]): List of tuples containing document IDs and scores.
+    - metadata (Metadata): Metadata related to the documents.
+
+    Returns:
+    - None
+    """
     if len(results) == 0:
         console.print("[red]No results found[/red]")
         return
@@ -355,6 +484,16 @@ def print_results(ctx: Context, results: SearchResults, metadata: Metadata) -> N
 
 # issue with this is that the vocab will have been lemmatized or stemmed
 def generate_vocab(ctx: Context, vocab: InvertedIndex) -> None:
+    """
+    Generate a vocabulary file from an inverted index.
+
+    Args:
+    - ctx (Context): Context for vocabulary generation.
+    - vocab (InvertedIndex): Inverted index containing vocabulary information.
+
+    Returns:
+    - None
+    """
     if ctx.verbose:
         logger.info("Generating dictionary")
 
@@ -366,8 +505,15 @@ def generate_vocab(ctx: Context, vocab: InvertedIndex) -> None:
 
 
 def search(ctx: Context) -> None:
-    # imported to allow backspacing in input
+    """
+    Perform a search operation based on the provided context.
 
+    Args:
+    - ctx (Context): Context for search.
+
+    Returns:
+    - None
+    """
     ii, doc_vectors, vec_space = index_documents(ctx)
 
     if ctx.spellcheck:

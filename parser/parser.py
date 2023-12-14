@@ -9,10 +9,10 @@ from bs4.element import Comment
 from nltk.tokenize import word_tokenize
 from collections import Counter
 from config import PICKLE_DIR
-from typing import BinaryIO, NoReturn, Sequence, assert_never, Literal
+from typing import BinaryIO, NoReturn, Sequence, assert_never
 import logging
 from search.ranking import calculate_tf, calculate_idf, calculate_tf_idf, calculate_bm25
-from resources import lemmatizer, stop_words, translator, stemmer
+from resources import lemmatizer, stop_words, translator, stemmer, console
 from collections import defaultdict
 import numpy as np
 from parser.types import (
@@ -27,6 +27,7 @@ from parser.types import (
     Weight,
     DocEntity,
     StripperType,
+    Entity,
 )
 
 
@@ -50,6 +51,7 @@ def filter_text(strip_func: StripFunc, text: str) -> list[str]:
 def filter_tokens(
     strip_func: StripFunc,
     tokens: Sequence[str | QueryTerm],
+    *,
     query: bool = False,
     remove_stopwords: bool = True,
 ) -> list[str] | list[QueryTerm]:
@@ -109,11 +111,11 @@ def clean_text(text: str) -> str:
     Returns:
         str: The cleaned text.
     """
-    return text.replace("-", " ").translate(translator).lower()
+    return text.replace("-", " ").translate(translator).casefold().strip()
 
 
 def parse_contents(
-    ctx: Context, file: BinaryIO, parser: str = "lxml"
+    ctx: Context, file: BinaryIO, *, parser: str = "lxml"
 ) -> FileParseSuccess:
     """
     Parses the contents of a file using BeautifulSoup, extracts tokens, and calculates occurrences.
@@ -131,29 +133,19 @@ def parse_contents(
     comments = soup.find_all(string=lambda element: isinstance(element, Comment))
     [s.extract() for s in soup(["script", "style", "iframe", "a", "img"])]
     [c.extract() for c in comments]
-
     occurrences: list[DocOccurrences] = []
-
-    filtered_all_text = filter_text(get_strip_func(ctx.stripper), soup.get_text())
 
     tokens = defaultdict(list[DocToken])
     entities: list[DocEntity] = []
-    total_words = len(filtered_all_text)
 
+    strip_func: StripFunc = get_strip_func(ctx.stripper)
+
+    # save calling this function in every loop iteration
+
+    total_words = 0
     for i, el in enumerate(soup.find_all()):
         filtered_text = filter_text(get_strip_func(ctx.stripper), el.get_text())
-
-        # for j, sent in enumerate(nltk.sent_tokenize(el.get_text())):
-        # for chunk in nltk.ne_chunk(nltk.pos_tag(nltk.word_tokenize(sent))):
-        # if hasattr(chunk, "label"):
-        # entities.append(
-        #    DocEntity(
-        # " ".join(c[0] for c in chunk).lower(),
-        # file.name,
-        # Entity.get_entity(chunk.label()),
-        # j,
-        # )
-        # )
+        total_words += len(filtered_text)
 
         weight: float = Weight.get_word_weight(el.name)
         counts: Counter = get_count(filtered_text)

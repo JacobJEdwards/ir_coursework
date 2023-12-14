@@ -6,7 +6,6 @@ from typing import Literal
 from args_parse import parser, ArgNamespace
 from parser.types import StripperType
 from rich.logging import RichHandler
-from resources import console
 
 ParserType = Literal["async", "mp", "mt", "sync"]
 ScorerType = Literal["tfidf", "bm25", "bm25+"]

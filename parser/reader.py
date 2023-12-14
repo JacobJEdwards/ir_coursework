@@ -34,7 +34,7 @@ from resources import console
 logger = logging.getLogger(__name__)
 
 
-def get_metadata(ctx) -> Metadata | None:
+def get_metadata(ctx: Context) -> Metadata | None:
     """
     Loads metadata from a JSON file and returns it if successful, otherwise returns None.
 
@@ -102,7 +102,7 @@ def _index_documents(ctx: Context) -> InvertedIndex:
     Returns:
         InvertedIndex: The inverted index containing indexed documents.
     """
-    results = parse_dir(ctx, VIDEOGAMES_DIR)
+    results: ParsedDir = parse_dir(ctx, VIDEOGAMES_DIR)
 
     success: ParsedDirSuccess = {}
 
@@ -111,10 +111,10 @@ def _index_documents(ctx: Context) -> InvertedIndex:
         if not isinstance(parse_result, Exception):
             success[file_path] = parse_result
         else:
-            logger.warning(f"File: {file_path}")
-            logger.warning(parse_result)
+            logger.error(f"Error Parsing File: {file_path}")
+            logger.error(parse_result)
 
-    metadata = generate_metadata(ctx, success)
+    metadata: Metadata = generate_metadata(ctx, success)
 
     result_dict: ParsedDirResults = {
         path: res["tokens"] for path, res in success.items()
