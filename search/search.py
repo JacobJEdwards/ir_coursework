@@ -17,9 +17,9 @@ from main import Context
 from parser.reader import get_metadata, index_documents
 import logging
 from search.types import SearchResults, SearchResult, QueryTerm
-from config import VOCAB_PATH
+from config import VOCAB_PATH, CACHE_SIZE
 from utils import timeit
-from functools import partial
+from functools import partial, cache
 from rich.prompt import Prompt, Confirm
 
 logger = logging.getLogger(__name__)
@@ -116,6 +116,7 @@ def l_distance_iter(a: str, b: str) -> int:
     return d[len_a][len_b]
 
 
+@lru_cache(maxsize=CACHE_SIZE)
 def l_distance_rec(a: str, b: str) -> int:
     """
     Computes the Levenshtein distance (edit distance) between two strings using a recursive approach.
@@ -127,26 +128,21 @@ def l_distance_rec(a: str, b: str) -> int:
     Returns:
     int: The Levenshtein distance between the input strings a and b.
     """
-    memo: dict[tuple[int, int], int] = {}
 
+    @cache
     def helper(i, j):
-        if (i, j) in memo:
-            return memo[(i, j)]
-
         if i == 0:
-            memo[(i, j)] = j
+            return j
         elif j == 0:
-            memo[(i, j)] = i
+            return i
         elif a[i - 1] == b[j - 1]:
-            memo[(i, j)] = helper(i - 1, j - 1)
+            return helper(i - 1, j - 1)
         else:
-            memo[(i, j)] = 1 + min(
-                helper(i, j - 1),  # Insertion
-                helper(i - 1, j),  # Deletion
-                helper(i - 1, j - 1),  # Substitution
+            return 1 + min(
+                helper(i, j - 1),  # insertion
+                helper(i - 1, j),  # deletion
+                helper(i - 1, j - 1),  # substitution
             )
-
-        return memo[(i, j)]
 
     return helper(len(a), len(b))
 
