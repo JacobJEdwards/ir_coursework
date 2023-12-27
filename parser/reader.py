@@ -1,6 +1,6 @@
 import multiprocessing
 import concurrent.futures
-from typing import assert_never
+from typing import assert_never, NoReturn
 
 import numpy as np
 
@@ -34,7 +34,7 @@ from resources import console
 logger = logging.getLogger(__name__)
 
 
-def get_metadata(ctx: Context) -> Metadata | None:
+def get_metadata(ctx: Context) -> Metadata | NoReturn:
     """
     Loads metadata from a JSON file and returns it if successful, otherwise returns None.
 
@@ -52,11 +52,11 @@ def get_metadata(ctx: Context) -> Metadata | None:
             metadata = json.load(f)
             return metadata
     except json.JSONDecodeError:
-        logger.error("Error decoding metadata")
+        logger.critical("Error decoding metadata")
+        exit(1)
     except IOError:
-        logger.error("Error loading metadata")
-
-    return None
+        logger.critical("Error loading metadata")
+        exit(1)
 
 
 def needs_reindexing(ctx: Context) -> bool:
@@ -111,8 +111,7 @@ def _index_documents(ctx: Context) -> InvertedIndex:
         if not isinstance(parse_result, Exception):
             success[file_path] = parse_result
         else:
-            logger.error(f"Error Parsing File: {file_path}")
-            logger.error(parse_result)
+            logger.error(f"Error Parsing File: {file_path}\n{parse_result}")
 
     metadata: Metadata = generate_metadata(ctx, success)
 
@@ -189,7 +188,7 @@ def generate_metadata(ctx: Context, info: ParsedDirSuccess) -> Metadata:
     if ctx.verbose:
         logger.info("Generating metadata")
 
-    metadata = {
+    metadata: Metadata = {
         "total_docs": len(info),
         "stripper": ctx.stripper,
         "files": {},
@@ -203,8 +202,10 @@ def generate_metadata(ctx: Context, info: ParsedDirSuccess) -> Metadata:
             metadata["files"].update(
                 {
                     str(file_path): {
-                        "last_modified": file_path.stat().st_mtime,
-                        "file_size": file_path.stat().st_size,
+                        "last_modified": (
+                            stat := file_path.stat()
+                        ).st_mtime,  # expression assignment to avoid recalculation
+                        "file_size": stat.st_size,
                         "info": line,
                         "word_count": info[file_path]["word_count"],
                     }
@@ -218,8 +219,10 @@ def generate_metadata(ctx: Context, info: ParsedDirSuccess) -> Metadata:
             metadata["files"].update(
                 {
                     str(file_path): {
-                        "last_modified": file_path.stat().st_mtime,
-                        "file_size": file_path.stat().st_size,
+                        "last_modified": (
+                            stat := file_path.stat()
+                        ).st_mtime,  # expression assignment to avoid recalculation
+                        "file_size": stat.st_size,
                         "info": None,
                         "word_count": info[file_path]["word_count"],
                     }
@@ -239,8 +242,7 @@ def generate_metadata(ctx: Context, info: ParsedDirSuccess) -> Metadata:
         with open("metadata.json", "w") as f:
             json.dump(metadata, f)
     except Exception as e:
-        logger.error("Error setting metadata")
-        logger.error(e)
+        logger.error(f"Error setting metadata : {e}")
 
     return metadata
 
@@ -261,8 +263,6 @@ def _parse_file(ctx: Context, file_path: Path) -> ParsedFile:
             results = parse_contents(ctx, f)
         return results
     except Exception as e:
-        # change the exception handling
-        logger.error(f"Error reading/parsing {file_path}: {str(e)}")
         e.add_note(f"Error reading/parsing {file_path}: {str(e)}")
         return e
 

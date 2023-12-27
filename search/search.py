@@ -127,7 +127,7 @@ def l_distance_rec(a: str, b: str) -> int:
     Returns:
     int: The Levenshtein distance between the input strings a and b.
     """
-    memo = {}
+    memo: dict[tuple[int, int], int] = {}
 
     def helper(i, j):
         if (i, j) in memo:
@@ -401,7 +401,7 @@ def search_idf(
     Returns:
     - SearchResults: List of search results.
     """
-    results = defaultdict(float)
+    results: defaultdict[str, float] = defaultdict(float)
 
     for query in query_terms:
         if query.term in inverted_index:
@@ -443,7 +443,7 @@ def print_result(ctx: Context, result: SearchResult, metadata: Metadata) -> None
     doc, score = result
 
     if doc in metadata["files"] and metadata["files"][doc]["info"] is not None:
-        info: dict = metadata["files"][doc]["info"]
+        info: dict[str, str] = metadata["files"][doc]["info"] or {}
         for key, val in info.items():
             if "url" in key:
                 console.print(

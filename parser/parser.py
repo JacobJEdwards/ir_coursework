@@ -12,7 +12,7 @@ from config import PICKLE_DIR
 from typing import BinaryIO, NoReturn, Sequence, assert_never
 import logging
 from search.ranking import calculate_tf, calculate_idf, calculate_tf_idf, calculate_bm25
-from resources import lemmatizer, stop_words, translator, stemmer, console
+from resources import lemmatizer, stop_words, translator, stemmer
 from collections import defaultdict
 import numpy as np
 from parser.types import (
@@ -27,7 +27,6 @@ from parser.types import (
     Weight,
     DocEntity,
     StripperType,
-    Entity,
 )
 
 
@@ -45,7 +44,7 @@ def filter_text(strip_func: StripFunc, text: str) -> list[str]:
     Returns:
         list[str]: A list of filtered tokens after applying the strip function.
     """
-    return filter_tokens(strip_func, word_tokenize(clean_text(text)))
+    return filter_tokens(strip_func, word_tokenize(clean_text(text)), query=False)
 
 
 def filter_tokens(
@@ -97,6 +96,8 @@ def get_strip_func(strip_type: StripperType) -> StripFunc:
             return lemmatizer.lemmatize
         case "stem":
             return stemmer.stem
+        case "none":
+            return lambda x: x
         case _:
             assert_never("Unreachable")
 
@@ -138,13 +139,12 @@ def parse_contents(
     tokens = defaultdict(list[DocToken])
     entities: list[DocEntity] = []
 
-    strip_func: StripFunc = get_strip_func(ctx.stripper)
-
     # save calling this function in every loop iteration
+    strip_func: StripFunc = get_strip_func(ctx.stripper)
 
     total_words = 0
     for i, el in enumerate(soup.find_all()):
-        filtered_text = filter_text(get_strip_func(ctx.stripper), el.get_text())
+        filtered_text = filter_text(strip_func, el.get_text())
         total_words += len(filtered_text)
 
         weight: float = Weight.get_word_weight(el.name)
@@ -180,7 +180,7 @@ def parse_contents(
             )
         )
 
-    return {"tokens": occurrences, "entities": None, "word_count": total_words}
+    return {"tokens": occurrences, "entities": entities, "word_count": total_words}
 
 
 def get_count(words: list[str]) -> Counter:

@@ -3,7 +3,8 @@ import logging
 from config import LOG_LEVEL
 from dataclasses import dataclass
 from typing import Literal
-from args_parse import parser, ArgNamespace
+from argparse import Namespace
+from args_parse import parser
 from parser.types import StripperType
 from rich.logging import RichHandler
 
@@ -43,7 +44,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def generate_context(args: ArgNamespace) -> Context:
+def generate_context(args: Namespace) -> Context:
     """
     Generates a Context object based on parsed command-line arguments.
 

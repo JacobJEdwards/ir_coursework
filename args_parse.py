@@ -1,12 +1,16 @@
-from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter, Namespace
-from collections import namedtuple
+from argparse import (
+    ArgumentParser,
+    ArgumentDefaultsHelpFormatter,
+)
+
+from rich_argparse import RichHelpFormatter
 
 
 # Creating an ArgumentParser instance to handle command-line arguments
 parser = ArgumentParser(
     prog="Information Retrieval",
     description="Search a collection of documents",
-    formatter_class=ArgumentDefaultsHelpFormatter,
+    formatter_class=RichHelpFormatter,
 )
 
 # Adding various arguments to the ArgumentParser
@@ -17,7 +21,7 @@ parser.add_argument(
     default="lemmatize",
     type=str,
     help="Choose whether to lemmatize or stem",
-    choices=["lemmatize", "stem"],
+    choices=["lemmatize", "stem", "none"],
     dest="stripper",
 )
 
@@ -92,7 +96,3 @@ parser.add_argument(
     dest="entities",
     help="enable use of named entities",
 )
-
-# Creating a named tuple to store the parsed argument namespace
-# It's constructed from the 'dest' attribute of each action added to the ArgumentParser
-ArgNamespace = namedtuple("ArgNamespace", [act.dest for act in parser._actions])

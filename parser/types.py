@@ -1,4 +1,4 @@
-from typing import TypedDict, Callable, Literal, Mapping
+from typing import TypedDict, Callable, Literal, Mapping, Self, Type
 from pathlib import Path
 import numpy as np
 from dataclasses import dataclass
@@ -16,7 +16,7 @@ class FileMetadata(TypedDict):
 class Metadata(TypedDict):
     stripper: Literal["lemmatize", "stem"]
     total_docs: int
-    files: Mapping[str, FileMetadata]
+    files: dict[str, FileMetadata]
     average_wc: float
 
 
@@ -57,7 +57,7 @@ class Weight(Enum):
     META = 1.2
 
     @classmethod
-    def get_word_weight(cls: "Weight", tag_name: str) -> float:
+    def get_word_weight(cls: Self, tag_name: str) -> float:
         # Method to retrieve weight based on the HTML tag
         match tag_name:
             case "h1":
@@ -104,7 +104,7 @@ class Entity(Enum):
     NONE = 1
 
     @classmethod
-    def get_entity(cls: "Entity", label: str) -> "Entity":
+    def get_entity(cls: Self, label: str) -> Self:
         # Method to retrieve an entity based on its label
         match label:
             case "ORGANIZATION":
@@ -152,7 +152,7 @@ class Token:
 # Alias definitions for better readability and type hints
 InvertedIndex = dict[str, Token]
 StripFunc = Callable[[str], str]
-StripperType = Literal["lemmatize", "stem"]
+StripperType = Literal["lemmatize", "stem", "none"]
 
 
 # TypedDicts and aliases for managing parsing results and directories
