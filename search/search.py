@@ -19,7 +19,7 @@ import logging
 from search.types import SearchResults, SearchResult, QueryTerm
 from config import VOCAB_PATH, CACHE_SIZE
 from utils import timeit
-from functools import partial, cache
+from functools import partial, cache, lru_cache
 from rich.prompt import Prompt, Confirm
 
 logger = logging.getLogger(__name__)
@@ -119,7 +119,7 @@ def l_distance_iter(a: str, b: str) -> int:
 @lru_cache(maxsize=CACHE_SIZE)
 def l_distance_rec(a: str, b: str) -> int:
     """
-    Computes the Levenshtein distance (edit distance) between two strings using a recursive approach.
+    Computes the Levenshtein distance (edit distance) between two strings using a recursive approach with cache (dynamic programming).
 
     Args:
     a (str): First string.
