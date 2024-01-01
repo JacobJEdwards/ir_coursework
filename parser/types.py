@@ -4,6 +4,10 @@ import numpy as np
 from dataclasses import dataclass
 from enum import Enum
 
+RawTokenList = set[str]
+StripFunc = Callable[[str], str]
+StripperType = Literal["lemmatize", "stem", "none"]
+
 
 # Defining TypedDicts to represent structured data
 class FileMetadata(TypedDict):
@@ -14,7 +18,7 @@ class FileMetadata(TypedDict):
 
 
 class Metadata(TypedDict):
-    stripper: Literal["lemmatize", "stem"]
+    stripper: StripperType
     total_docs: int
     files: dict[str, FileMetadata]
     average_wc: float
@@ -151,8 +155,6 @@ class Token:
 
 # Alias definitions for better readability and type hints
 InvertedIndex = dict[str, Token]
-StripFunc = Callable[[str], str]
-StripperType = Literal["lemmatize", "stem", "none"]
 
 
 # TypedDicts and aliases for managing parsing results and directories

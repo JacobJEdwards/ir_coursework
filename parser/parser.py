@@ -28,6 +28,7 @@ from parser.types import (
     DocEntity,
     StripperType,
 )
+from functools import reduce
 
 
 logger = logging.getLogger(__name__)
@@ -134,7 +135,6 @@ def parse_contents(
     comments = soup.find_all(string=lambda element: isinstance(element, Comment))
     [s.extract() for s in soup(["script", "style", "iframe", "a", "img"])]
     [c.extract() for c in comments]
-    occurrences: list[DocOccurrences] = []
 
     tokens = defaultdict(list[DocToken])
     entities: list[DocEntity] = []
@@ -144,7 +144,9 @@ def parse_contents(
 
     total_words = 0
     for i, el in enumerate(soup.find_all()):
+        # redo this as tokenizing twice
         filtered_text = filter_text(strip_func, el.get_text())
+
         total_words += len(filtered_text)
 
         weight: float = Weight.get_word_weight(el.name)
@@ -159,6 +161,19 @@ def parse_contents(
                 )
             )
 
+    occurrences = [
+        DocOccurrences(
+            filename=file.name,
+            word=word,
+            num_occ=sum(occ.count for occ in occur),
+            tf=calculate_tf(total_words, sum(occ.count for occ in occur)),
+            weight=reduce(lambda x, y: x * y.weight, occur, 1),
+            positions=[occ.position for occ in occur],
+        )
+        for word, occur in tokens.items()
+    ]
+
+    """
     for word, occur in tokens.items():
         total_weight = 1
         total_count = 0
@@ -179,8 +194,13 @@ def parse_contents(
                 positions=positions,
             )
         )
+        """
 
-    return {"tokens": occurrences, "entities": entities, "word_count": total_words}
+    return {
+        "tokens": occurrences,
+        "entities": entities,
+        "word_count": total_words,
+    }
 
 
 def get_count(words: list[str]) -> Counter:

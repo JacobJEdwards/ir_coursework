@@ -2,7 +2,7 @@ import os
 from typing import assert_never, Sequence
 from nltk.corpus import wordnet
 from parser.parser import filter_tokens, get_strip_func, filter_text
-from parser.types import InvertedIndex, Metadata
+from parser.types import InvertedIndex, Metadata, StripFunc
 from search.ranking import (
     calculate_tf,
     calculate_bm25,
@@ -72,50 +72,6 @@ def get_suggestions_external(
     return new_tokens
 
 
-# out of range error !!!!!!!!!!!
-# TODO: fix
-def l_distance_iter(a: str, b: str) -> int:
-    """
-    Computes the Levenshtein distance (edit distance) between two strings using an iterative approach.
-
-    Args:
-    a (str): First string.
-    b (str): Second string.
-
-    Returns:
-    int: The Levenshtein distance between the input strings a and b.
-    """
-    len_a = len(a)
-    len_b = len(b)
-
-    if abs(len_a > len_b) > 0:
-        return abs(len_a - len_b)
-
-    if len_a > len_b:
-        a, b = b, a
-        len_a, len_b = len_b, len_a
-
-    d = [[0 for _ in range(len_b + 1)] for _ in range(len_a + 1)]
-
-    for i in range(len_a + 1):
-        d[i][0] = i
-
-    for i in range(len_b + 1):
-        d[0][i] = i
-
-    for i in range(1, len_b - 1):
-        for j in range(1, len_a - 1):
-            if i - 1 < len(a) and j - 1 < len(b):
-                cost = 0 if a[i - 1] == b[j - 1] else 1
-            else:
-                # Handle index out of range case
-                cost = 0  # Or any other strategy to handle the situation
-
-            d[i][j] = min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost)
-
-    return d[len_a][len_b]
-
-
 @lru_cache(maxsize=CACHE_SIZE)
 def l_distance_rec(a: str, b: str) -> int:
     """
@@ -147,6 +103,7 @@ def l_distance_rec(a: str, b: str) -> int:
     return helper(len(a), len(b))
 
 
+@lru_cache(maxsize=CACHE_SIZE)
 def load_words() -> set[str]:
     """
     Load words from a vocabulary file.
@@ -154,16 +111,14 @@ def load_words() -> set[str]:
     Returns:
     - set[str]: Set of words loaded from the vocabulary file.
     """
-    words = set()
     with open(VOCAB_PATH, "r") as f:
-        for line in f:
-            words.add(line.split(" ")[0])
+        words = set(line.split(" ")[0] for line in f.readlines())
 
     return words
 
 
 def get_suggestions_internal(
-    tokens: Sequence[QueryTerm], *, print_terms: bool = False
+    tokens: Sequence[QueryTerm], *, strip_func: StripFunc, print_terms: bool = False
 ) -> list[QueryTerm]:
     """
     Get suggestions for query tokens from an internal vocabulary.
@@ -178,7 +133,9 @@ def get_suggestions_internal(
     vocab = load_words()
     new_tokens = []
     for token in tokens:
-        distances = {word: l_distance_rec(token.term, word) for word in vocab}
+        distances = {
+            word: l_distance_rec(strip_func(token.term), word) for word in vocab
+        }
 
         top_3: list[tuple[str, int]] = sorted(distances.items(), key=lambda x: x[1])[:3]
 
@@ -239,13 +196,17 @@ def _clean_tokenized_input(
     Returns:
     - list[QueryTerm]: Processed list of query tokens.
     """
+    strip_func = get_strip_func(ctx.stripper)
+
     if ctx.spellcheck:
-        tokens = get_suggestions_internal(tokens, print_terms=ctx.verbose)
+        tokens = get_suggestions_internal(
+            tokens, strip_func=strip_func, print_terms=ctx.verbose
+        )
 
     if ctx.expand:
         tokens = expand_query(tokens, print_terms=ctx.verbose)
 
-    tokens = filter_tokens(get_strip_func(ctx.stripper), tokens, query=True)
+    tokens = filter_tokens(strip_func, tokens, query=True)
 
     if ctx.verbose:
         logger.info(f"Final tokens: {tokens}\n")
@@ -375,7 +336,7 @@ def search_vecs(
     for doc, vec in doc_vecs.items():
         results[doc] = cosine_similarity(query_vec, vec)
 
-    return list(sorted(results.items(), key=lambda x: x[1], reverse=True)[:10])
+    return sorted(results.items(), key=lambda x: x[1], reverse=True)[:10]
 
 
 @timeit
@@ -421,7 +382,7 @@ def search_idf(
                 else:
                     results[occurrence.filename] += score
 
-    return list(sorted(results.items(), key=lambda x: x[1], reverse=True)[:10])
+    return sorted(results.items(), key=lambda x: x[1], reverse=True)[:10]
 
 
 def print_result(ctx: Context, result: SearchResult, metadata: Metadata) -> None:
@@ -478,7 +439,6 @@ def print_results(ctx: Context, results: SearchResults, metadata: Metadata) -> N
         print_result(ctx, (doc, score), metadata)
 
 
-# issue with this is that the vocab will have been lemmatized or stemmed
 def generate_vocab(ctx: Context, vocab: InvertedIndex) -> None:
     """
     Generate a vocabulary file from an inverted index.
@@ -517,8 +477,6 @@ def search(ctx: Context) -> None:
 
     metadata: Metadata = get_metadata(ctx)
 
-    # might be nicer to convert search funcs into closures -> one closure ??
-    # or alternatively single dispatch method
     match ctx.searcher:
         case "vector":
             search_func = partial(

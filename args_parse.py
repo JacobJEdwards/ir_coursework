@@ -1,6 +1,5 @@
 from argparse import (
     ArgumentParser,
-    ArgumentDefaultsHelpFormatter,
 )
 
 from rich_argparse import RichHelpFormatter
@@ -81,13 +80,6 @@ parser.add_argument(
     choices=["vector", "score"],
     default="vector",
     dest="searcher",
-)
-
-parser.add_argument(
-    "--stopwords",
-    action="store_true",
-    dest="stopwords",
-    help="disable removal of stopwords",
 )
 
 parser.add_argument(

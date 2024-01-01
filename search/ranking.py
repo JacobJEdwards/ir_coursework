@@ -2,6 +2,7 @@ import math
 from functools import lru_cache
 from config import CACHE_SIZE
 import numpy as np
+from typing import Sequence
 
 
 @lru_cache(maxsize=CACHE_SIZE)
@@ -93,7 +94,7 @@ def calculate_bm25(
 
 
 @lru_cache(maxsize=CACHE_SIZE)
-def calculate_idf(total_docs: int, docs_with_term: int, bm25: bool = False) -> float:
+def calculate_idf(total_docs: int, docs_with_term: int, *, bm25: bool = False) -> float:
     """
     Calculate IDF scoring.
 
@@ -128,16 +129,19 @@ def calculate_tf(
     Returns:
     - float: Calculated TF score.
     """
+    if total_words == 0:
+        return 0
+
     return word_count / total_words
 
 
-def calculate_dot(vec1: np.ndarray, vec2: np.ndarray) -> int:
+def calculate_dot(vec1: Sequence[float], vec2: Sequence[float]) -> int:
     """
     Calculate the dot product of two vectors.
 
     Args:
-    - vec1 (np.ndarray): First vector.
-    - vec2 (np.ndarray): Second vector.
+    - vec1 (Sequence[float]): First vector.
+    - vec2 (Sequence[float]): Second vector.
 
     Returns:
     - int: Dot product of the two vectors.
@@ -145,31 +149,33 @@ def calculate_dot(vec1: np.ndarray, vec2: np.ndarray) -> int:
     return sum(a * b for a, b in zip(vec1, vec2))
 
 
-def calculate_vector_norm(vec: np.ndarray) -> float:
+def calculate_vector_norm(vec: Sequence[float]) -> float:
     """
     Calculate the Euclidean norm (magnitude) of a vector.
 
     Args:
-    - vec (np.ndarray): Input vector.
+    - vec (Sequence[float]): Input vector.
 
     Returns:
     - float: Euclidean norm of the vector.
     """
-    return math.sqrt(sum(x * x for x in vec))
+    return math.sqrt(sum(x**2 for x in vec))
 
 
-def cosine_similarity(query_vector: np.ndarray, doc_vector: np.ndarray) -> float:
+def cosine_similarity(
+    query_vector: Sequence[float], doc_vector: Sequence[float]
+) -> float:
     """
     Calculate cosine similarity between two vectors.
 
     Args:
-    - query_vector (np.ndarray): Vector representing the query.
-    - doc_vector (np.ndarray): Vector representing the document.
+    - query_vector (Sequence[float]): Vector representing the query.
+    - doc_vector (Sequence[float]): Vector representing the document.
 
     Returns:
     - float: Cosine similarity score between the query and document vectors.
     """
-    dot_product = calculate_dot(query_vector, doc_vector.T)
+    dot_product = calculate_dot(query_vector, doc_vector)
 
     query_norm = calculate_vector_norm(query_vector)
     doc_norm = calculate_vector_norm(doc_vector)

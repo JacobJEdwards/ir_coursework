@@ -29,7 +29,6 @@ class Context:
     weighted: bool = True
     entities: bool = True
     verbose: bool = False
-    stopwords: bool = False
 
 
 FORMAT = "%(message)s"
@@ -54,9 +53,6 @@ def generate_context(args: Namespace) -> Context:
     Returns:
         Context: Context object with configured settings.
     """
-    if args.stopwords:
-        args.regen = True
-
     if args.all:
         return Context(
             stripper=args.stripper,
@@ -64,7 +60,6 @@ def generate_context(args: Namespace) -> Context:
             verbose=args.verbose,
             scorer=args.scorer,
             searcher=args.searcher,
-            stopwords=args.stopwords,
         )
 
     return Context(
@@ -77,7 +72,6 @@ def generate_context(args: Namespace) -> Context:
         verbose=args.verbose,
         scorer=args.scorer,
         searcher=args.searcher,
-        stopwords=args.stopwords,
         entities=args.entities,
     )
 
