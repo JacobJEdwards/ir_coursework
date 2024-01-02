@@ -46,11 +46,18 @@ The modified Inverted Index includes pre-calculated term frequency, IDF, and oth
 
 ### Setup and Execution
 
-1. Install Python 3.11 and NLTK.
+1. Install Python 3.11.
 2. Clone the repository and navigate to the project directory.
-3. Run the system using command-line options as needed:
+3. Install dependencies:
+
    ```bash
-   python main.py -v --searcher vector_space -r --indexing-method multi-processed
+       python -m pip install -r requirements.txt
+   ```
+
+4. Run the system using command-line options as needed:
+
+   ```bash
+   python main.py -v -a --scorer tfidf
    ```
 
 ### Experimentation and Customization
