@@ -102,6 +102,7 @@ def _index_documents(ctx: Context) -> InvertedIndex:
     Returns:
         InvertedIndex: The inverted index containing indexed documents.
     """
+
     results: ParsedDir = parse_dir(ctx, VIDEOGAMES_DIR)
 
     success: ParsedDirSuccess = {}

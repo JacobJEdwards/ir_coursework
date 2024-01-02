@@ -7,6 +7,7 @@ from search.types import QueryTerm
 from bs4 import BeautifulSoup
 from bs4.element import Comment
 from nltk.tokenize import word_tokenize
+import nltk
 from collections import Counter
 from config import PICKLE_DIR
 from typing import BinaryIO, NoReturn, Sequence, assert_never
@@ -27,6 +28,7 @@ from parser.types import (
     Weight,
     DocEntity,
     StripperType,
+    Entity,
 )
 from functools import reduce
 
@@ -144,10 +146,24 @@ def parse_contents(
 
     total_words = 0
     for i, el in enumerate(soup.find_all()):
-        # redo this as tokenizing twice
-        filtered_text = filter_text(strip_func, el.get_text())
+        text = el.get_text()
+        filtered_text = filter_text(strip_func, text)
 
         total_words += len(filtered_text)
+
+        """
+        for j, chunk in enumerate(
+            nltk.ne_chunk(nltk.pos_tag(nltk.word_tokenize(text)))
+        ):
+            if hasattr(chunk, "label"):
+                entities.append(
+                    DocEntity(
+                        " ".join(c[0] for c in chunk).casefold(),
+                        file.name,
+                        Entity.get_entity(chunk.label()),
+                    )
+                )
+        """
 
         weight: float = Weight.get_word_weight(el.name)
         counts: Counter = get_count(filtered_text)
@@ -172,29 +188,6 @@ def parse_contents(
         )
         for word, occur in tokens.items()
     ]
-
-    """
-    for word, occur in tokens.items():
-        total_weight = 1
-        total_count = 0
-        positions = []
-        for occ in occur:
-            total_weight *= occ.weight
-            total_count += occ.count
-            positions.append(occ.position)
-
-        tf = calculate_tf(total_words, total_count)
-        occurrences.append(
-            DocOccurrences(
-                filename=file.name,
-                word=word,
-                num_occ=total_count,
-                tf=tf,
-                weight=total_weight,
-                positions=positions,
-            )
-        )
-        """
 
     return {
         "tokens": occurrences,

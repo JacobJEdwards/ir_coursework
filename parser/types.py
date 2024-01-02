@@ -28,20 +28,6 @@ class Metadata(TypedDict):
 DocumentMatrix = np.ndarray
 
 
-# Data class to represent occurrences of a word in a document
-@dataclass
-class DocOccurrences:
-    filename: str
-    word: str
-    num_occ: int
-    tf: float
-    weight: float
-    positions: list[int]
-    tfidf: float = 0.0
-    bm25: float = 0.0
-    bm25_plus: float = 0.0
-
-
 # Enum for defining weights based on HTML tag names
 class Weight(Enum):
     # Enum members with associated weights for different HTML tags
@@ -140,6 +126,20 @@ class DocEntity:
     filename: str
     type: Entity = Entity.NONE
     position: int | None = None
+
+
+# Data class to represent occurrences of a word in a document
+@dataclass
+class DocOccurrences:
+    filename: str
+    word: str
+    num_occ: int
+    tf: float
+    weight: float
+    positions: list[int]
+    tfidf: float = 0.0
+    bm25: float = 0.0
+    bm25_plus: float = 0.0
 
 
 # Data class representing a token in a document with its occurrences and positions

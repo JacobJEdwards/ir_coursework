@@ -146,6 +146,8 @@ def get_suggestions_internal(
         if print_terms:
             logging.info(f"Top suggestions: {top_3}")
 
+        console.print(f"Spell corrections for [bold]{token.term}[/bold]:")
+
         for suggestion in top_3:
             if Confirm.ask(f"Did you mean [bold]{suggestion[0]}[/bold]?"):
                 new_tokens.append(QueryTerm(term=suggestion[0], weight=token.weight))
@@ -307,6 +309,41 @@ def vectorise_query(
     return query_vector
 
 
+feedback_store = defaultdict(list)
+
+
+def record_feedback(
+    query: int, relevant_docs: list[int], irrelevant_docs: list[int]
+) -> None:
+    feedback_store[query].extend(relevant_docs)
+
+
+def get_feedback(query: int) -> list[int]:
+    return feedback_store[query]
+
+
+def rocchio_feedback(
+    ctx: Context,
+    query_vec: np.ndarray,
+    relevant_vecs: Sequence[np.ndarray],
+    irrelevant_vecs: Sequence[np.ndarray],
+    *,
+    alpha: float = 1.0,
+    beta: float = 0.75,
+    gamma: float = 0.15,
+) -> np.ndarray:
+    relevant_centroid = (
+        np.mean(relevant_vecs, axis=0) if relevant_vecs else np.zeros_like(query_vec)
+    )
+    irrelevant_centroid = (
+        np.mean(irrelevant_vecs, axis=0)
+        if irrelevant_vecs
+        else np.zeros_like(query_vec)
+    )
+
+    return alpha * query_vec + beta * relevant_centroid - gamma * irrelevant_centroid
+
+
 @timeit
 def search_vecs(
     ctx: Context,
@@ -336,7 +373,9 @@ def search_vecs(
     for doc, vec in doc_vecs.items():
         results[doc] = cosine_similarity(query_vec, vec)
 
-    return sorted(results.items(), key=lambda x: x[1], reverse=True)[:10]
+    top_results = sorted(results.items(), key=lambda x: x[1], reverse=True)[:10]
+
+    return top_results
 
 
 @timeit

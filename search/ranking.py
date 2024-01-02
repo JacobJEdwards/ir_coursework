@@ -1,7 +1,6 @@
 import math
 from functools import lru_cache
 from config import CACHE_SIZE
-import numpy as np
 from typing import Sequence
 
 

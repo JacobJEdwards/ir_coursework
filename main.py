@@ -13,7 +13,10 @@ ScorerType = Literal["tfidf", "bm25", "bm25+"]
 SearcherType = Literal["vector", "score"]
 
 
-@dataclass
+@dataclass(
+    frozen=True,
+    slots=True,
+)
 class Context:
     """
     Dataclass to store configuration settings for the search.
@@ -48,7 +51,7 @@ def generate_context(args: Namespace) -> Context:
     Generates a Context object based on parsed command-line arguments.
 
     Args:
-        args (ArgNamespace): Parsed command-line arguments.
+        args (Namespace): Parsed command-line arguments.
 
     Returns:
         Context: Context object with configured settings.
