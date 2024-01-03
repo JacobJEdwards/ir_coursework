@@ -288,22 +288,21 @@ def vectorise_query(
                 case "tfidf":
                     idf = ii[term].idf
                     score = calculate_tf_idf(tf, idf)
-                case "bm25":
+                case "bm25" | "bm25+":
                     idf = ii[term].bm25_idf
                     score = calculate_bm25(
-                        tf, idf, len(query_terms), metadata["average_wc"], plus=False
-                    )
-                case "bm25+":
-                    idf = ii[term].bm25_idf
-                    score = calculate_bm25(
-                        tf, idf, len(query_terms), metadata["average_wc"], plus=True
+                        tf,
+                        idf,
+                        len(query_terms),
+                        metadata["average_wc"],
+                        plus=(ctx.scorer == "bm25+"),
                     )
                 case _:
                     assert_never("Unreachable")
 
             if ctx.weighted:
                 query_term = next(token for token in query_terms if token.term == term)
-                score = score * query_term.weight
+                score *= query_term.weight
 
             query_vector[i] = score
 

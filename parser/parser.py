@@ -27,6 +27,7 @@ from parser.types import (
     Weight,
     DocEntity,
     StripperType,
+    FileMetadata,
 )
 from functools import reduce
 
@@ -117,7 +118,11 @@ def clean_text(text: str) -> str:
 
 
 def parse_contents(
-    ctx: Context, file: BinaryIO, *, parser: str = "lxml"
+    ctx: Context,
+    file: BinaryIO,
+    metadata: FileMetadata | None = None,
+    *,
+    parser: str = "lxml",
 ) -> FileParseSuccess:
     """
     Parses the contents of a file using BeautifulSoup, extracts tokens, and calculates occurrences.
@@ -125,6 +130,7 @@ def parse_contents(
     Args:
         ctx (Context): The context or configuration for parsing.
         file (BinaryIO): The file object to be parsed.
+        metadata (FileMetadata | None): Metadata about the document
         parser (str, optional): The parser to use with BeautifulSoup. Defaults to "lxml".
 
     Returns:
@@ -174,6 +180,11 @@ def parse_contents(
                     position=i,
                 )
             )
+
+    if metadata is not None and metadata["info"] is not None:
+        for info in metadata["info"].values():
+            for token in filter_text(strip_func, info):
+                tokens[token].append(DocToken(count=1, weight=2, position=0))
 
     occurrences = [
         DocOccurrences(

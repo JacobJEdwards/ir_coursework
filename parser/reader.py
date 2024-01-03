@@ -3,6 +3,7 @@ import concurrent.futures
 from typing import assert_never, NoReturn
 
 import numpy as np
+from functools import cache
 
 from main import Context
 from pathlib import Path
@@ -23,6 +24,7 @@ from parser.types import (
     ParsedFile,
     ParsedDirResults,
     ParsedDirSuccess,
+    FileMetadata,
 )
 from utils import timeit
 import logging
@@ -34,6 +36,7 @@ from resources import console
 logger = logging.getLogger(__name__)
 
 
+@cache
 def get_metadata(ctx: Context) -> Metadata | NoReturn:
     """
     Loads metadata from a JSON file and returns it if successful, otherwise returns None.
@@ -42,7 +45,7 @@ def get_metadata(ctx: Context) -> Metadata | NoReturn:
         ctx (Context): The context or configuration for loading metadata.
 
     Returns:
-        Metadata | None: The loaded metadata if successful, None otherwise.
+        Metadata | NoReturn: The loaded metadata if successful, None otherwise.
     """
     if ctx.verbose:
         logger.info("Loading metadata")
@@ -51,12 +54,12 @@ def get_metadata(ctx: Context) -> Metadata | NoReturn:
         with open("metadata.json") as f:
             metadata = json.load(f)
             return metadata
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as e:
         logger.critical("Error decoding metadata")
-        exit(1)
-    except IOError:
+        raise e
+    except IOError as e:
         logger.critical("Error loading metadata")
-        exit(1)
+        raise e
 
 
 def needs_reindexing(ctx: Context) -> bool:
@@ -248,6 +251,15 @@ def generate_metadata(ctx: Context, info: ParsedDirSuccess) -> Metadata:
     return metadata
 
 
+def get_file_metadata(ctx: Context, file_path: Path) -> FileMetadata | None:
+    try:
+        metadata = get_metadata(ctx)
+        return metadata["files"].get(str(file_path), None)
+    except Exception as e:
+        logger.info("Error parsing metadata to file parser", e)
+        return None
+
+
 def _parse_file(ctx: Context, file_path: Path) -> ParsedFile:
     """
     Parses an individual file.
@@ -259,9 +271,11 @@ def _parse_file(ctx: Context, file_path: Path) -> ParsedFile:
     Returns:
         ParsedFile: The parsing results of the file.
     """
+
     try:
+        file_info = get_file_metadata(ctx, file_path)
         with open(file_path, "rb") as f:
-            results = parse_contents(ctx, f)
+            results = parse_contents(ctx, f, file_info)
         return results
     except Exception as e:
         e.add_note(f"Error reading/parsing {file_path}: {str(e)}")
@@ -280,8 +294,9 @@ async def _parse_file_async(ctx: Context, file_path: Path) -> ParsedFile:
         ParsedFile: The parsing results of the file.
     """
     try:
+        file_info = get_file_metadata(ctx, file_path)
         with open(file_path, "rb") as f:
-            results = parse_contents(ctx, f)
+            results = parse_contents(ctx, f, file_info)
         return results
     except Exception as e:
         e.add_note(f"Error reading/parsing {file_path}: {str(e)}")
