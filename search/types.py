@@ -1,8 +1,14 @@
-from typing import NamedTuple, Callable
+from typing import NamedTuple, Callable, TypedDict
+import numpy as np
 
 
 # A search result consisting of a document ID (string) and a search score (float)
-SearchResult = tuple[str, float]
+class ResultType(TypedDict):
+    vec: np.ndarray
+    score: float
+
+
+SearchResult = tuple[str, ResultType | float]
 
 # A collection of search results
 SearchResults = list[SearchResult]

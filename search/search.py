@@ -75,7 +75,8 @@ def get_suggestions_external(
 @lru_cache(maxsize=CACHE_SIZE)
 def l_distance_rec(a: str, b: str) -> int:
     """
-    Computes the Levenshtein distance (edit distance) between two strings using a recursive approach with cache (dynamic programming).
+    Computes the Levenshtein distance (edit distance) between two strings using a recursive approach with cache
+    (dynamic programming).
 
     Args:
     a (str): First string.
@@ -185,7 +186,7 @@ def expand_query(
 
 
 def _clean_tokenized_input(
-    ctx: Context, tokens: Sequence[QueryTerm], metadata: Metadata
+    ctx: Context, tokens: Sequence[QueryTerm], _metadata: Metadata
 ) -> list[QueryTerm]:
     """
     Clean and process a sequence of query tokens based on the provided context.
@@ -193,7 +194,7 @@ def _clean_tokenized_input(
     Args:
     - ctx (Context): Context for processing.
     - tokens (Sequence[QueryTerm]): Sequence of query tokens.
-    - metadata (Metadata): Metadata related to the query.
+    - _metadata (Metadata): Metadata related to the query.
 
     Returns:
     - list[QueryTerm]: Processed list of query tokens.
@@ -313,7 +314,7 @@ feedback_store = defaultdict(list)
 
 
 def record_feedback(
-    query: int, relevant_docs: list[int], irrelevant_docs: list[int]
+    query: int, relevant_docs: list[int], _irrelevant_docs: list[int]
 ) -> None:
     feedback_store[query].extend(relevant_docs)
 
@@ -332,6 +333,8 @@ def rocchio_feedback(
     beta: float = 0.75,
     gamma: float = 0.15,
 ) -> np.ndarray:
+    if ctx.verbose:
+        logger.info("adjusting document relevance")
     relevant_centroid = (
         np.mean(relevant_vecs, axis=0) if relevant_vecs else np.zeros_like(query_vec)
     )
@@ -368,12 +371,15 @@ def search_vecs(
     - SearchResults: List of search results.
     """
     query_vec = vectorise_query(ctx, query_terms, vec_space, ii, metadata)
-    results = defaultdict(float)
+    results = {}
 
     for doc, vec in doc_vecs.items():
-        results[doc] = cosine_similarity(query_vec, vec)
+        results[doc] = {"vec": vec, "score": cosine_similarity(query_vec, vec)}
+        # results[doc] = cosine_similarity(query_vec, vec)
 
-    top_results = sorted(results.items(), key=lambda x: x[1], reverse=True)[:10]
+    top_results = sorted(results.items(), key=lambda x: x[1]["score"], reverse=True)[
+        :10
+    ]
 
     return top_results
 
@@ -382,7 +388,7 @@ def search_vecs(
 def search_idf(
     ctx: Context,
     inverted_index: InvertedIndex,
-    metadata: Metadata,
+    _metadata: Metadata,
     query_terms: Sequence[QueryTerm],
 ) -> SearchResults:
     """
@@ -391,7 +397,7 @@ def search_idf(
     Args:
     - ctx (Context): Context for search.
     - inverted_index (InvertedIndex): Inverted index for document retrieval.
-    - metadata (Metadata): Metadata related to the query and documents.
+    - _metadata (Metadata): Metadata related to the query and documents.
     - query_terms (Sequence[QueryTerm]): Query terms.
 
     Returns:
@@ -436,7 +442,8 @@ def print_result(ctx: Context, result: SearchResult, metadata: Metadata) -> None
     Returns:
     - None
     """
-    doc, score = result
+    doc, res = result
+    score = res if isinstance(res, float) else res["score"]
 
     if doc in metadata["files"] and metadata["files"][doc]["info"] is not None:
         info: dict[str, str] = metadata["files"][doc]["info"] or {}

@@ -317,7 +317,7 @@ def parse_dir(
         case "mt":
             return _parse_dir_mt(ctx, directory)
         case _:
-            assert_never("Unreachable")
+            assert_never(ctx.parser_type)
 
 
 @timeit

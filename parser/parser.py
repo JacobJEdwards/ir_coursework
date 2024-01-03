@@ -7,7 +7,6 @@ from search.types import QueryTerm
 from bs4 import BeautifulSoup
 from bs4.element import Comment
 from nltk.tokenize import word_tokenize
-import nltk
 from collections import Counter
 from config import PICKLE_DIR
 from typing import BinaryIO, NoReturn, Sequence, assert_never
@@ -28,7 +27,6 @@ from parser.types import (
     Weight,
     DocEntity,
     StripperType,
-    Entity,
 )
 from functools import reduce
 
@@ -102,7 +100,7 @@ def get_strip_func(strip_type: StripperType) -> StripFunc:
         case "none":
             return lambda x: x
         case _:
-            assert_never("Unreachable")
+            assert_never(strip_type)
 
 
 def clean_text(text: str) -> str:
@@ -284,7 +282,7 @@ def merge_word_count_dicts(
 
 
 def generate_document_matrix(
-    ctx: Context, ii: InvertedIndex, metadata: Metadata
+    ctx: Context, ii: InvertedIndex, _metadata: Metadata
 ) -> tuple[list[str], dict[str, np.ndarray]]:
     """
     Generates a document-term matrix based on the weighted tokens in the inverted index.
@@ -292,7 +290,7 @@ def generate_document_matrix(
     Args:
         ctx (Context): The context or configuration for matrix generation.
         ii (InvertedIndex): The inverted index containing weighted tokens.
-        metadata (Metadata): Metadata containing document-level information.
+        _metadata (Metadata): Metadata containing document-level information.
 
     Returns:
         tuple[list[str], dict[str, np.ndarray]]: A tuple containing vector space and document matrix.
@@ -314,7 +312,7 @@ def generate_document_matrix(
                 case "bm25+":
                     score = occ.bm25_plus
                 case _:
-                    assert_never("Unreachable")
+                    assert_never(ctx.scorer)
 
             if ctx.weighted:
                 score = score * occ.weight
