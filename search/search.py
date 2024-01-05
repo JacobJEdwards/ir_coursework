@@ -87,7 +87,7 @@ def l_distance_rec(a: str, b: str) -> int:
     """
 
     @cache
-    def helper(i, j):
+    def helper(i: int, j: int) -> int:
         if i == 0:
             return j
         elif j == 0:
@@ -118,6 +118,7 @@ def load_words() -> set[str]:
     return words
 
 
+@timeit
 def get_suggestions_internal(
     tokens: Sequence[QueryTerm], *, strip_func: StripFunc, print_terms: bool = False
 ) -> list[QueryTerm]:
@@ -159,6 +160,7 @@ def get_suggestions_internal(
     return new_tokens
 
 
+@timeit
 def expand_query(
     query_terms: Sequence[QueryTerm], *, print_terms: bool = False
 ) -> list[QueryTerm]:
